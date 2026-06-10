@@ -88,38 +88,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | — | Pending |
-| DATA-02 | — | Pending |
-| DATA-03 | — | Pending |
-| DATA-04 | — | Pending |
-| DATA-05 | — | Pending |
-| SCRP-01 | — | Pending |
-| SCRP-02 | — | Pending |
-| SCRP-03 | — | Pending |
-| SCRP-04 | — | Pending |
-| SCRP-05 | — | Pending |
-| MODA-01 | — | Pending |
-| MODA-02 | — | Pending |
-| MODA-03 | — | Pending |
-| MODA-04 | — | Pending |
-| EVCALC-01 | — | Pending |
-| EVCALC-02 | — | Pending |
-| EVCALC-03 | — | Pending |
-| EVCALC-04 | — | Pending |
-| EVCALC-05 | — | Pending |
-| BKTS-01 | — | Pending |
-| BKTS-02 | — | Pending |
-| BKTS-03 | — | Pending |
-| BKTS-04 | — | Pending |
-| OUTP-01 | — | Pending |
-| OUTP-02 | — | Pending |
-| OUTP-03 | — | Pending |
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 2 | Pending |
+| DATA-03 | Phase 3 | Pending |
+| DATA-04 | Phase 1 | Pending |
+| DATA-05 | Phase 6 | Pending |
+| SCRP-01 | Phase 4 | Pending |
+| SCRP-02 | Phase 4 | Pending |
+| SCRP-03 | Phase 4 | Pending |
+| SCRP-04 | Phase 5 | Pending |
+| SCRP-05 | Phase 4 | Pending |
+| MODA-01 | Phase 7 | Pending |
+| MODA-02 | Phase 7 | Pending |
+| MODA-03 | Phase 7 | Pending |
+| MODA-04 | Phase 7 | Pending |
+| EVCALC-01 | Phase 8 | Pending |
+| EVCALC-02 | Phase 8 | Pending |
+| EVCALC-03 | Phase 8 | Pending |
+| EVCALC-04 | Phase 8 | Pending |
+| EVCALC-05 | Phase 8 | Pending |
+| BKTS-01 | Phase 9 | Pending |
+| BKTS-02 | Phase 9 | Pending |
+| BKTS-03 | Phase 9 | Pending |
+| BKTS-04 | Phase 9 | Pending |
+| OUTP-01 | Phase 10 | Pending |
+| OUTP-02 | Phase 10 | Pending |
+| OUTP-03 | Phase 10 | Pending |
 
 **Coverage:**
 - v1 requirements: 26 total
-- Mapped to phases: 0
-- Unmapped: 26 ⚠️
+- Mapped to phases: 26
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-06-10*
-*Last updated: 2026-06-10 after initial definition*
+*Last updated: 2026-06-11 after roadmap creation*
