@@ -16,7 +16,7 @@ Build a CLI-based system that identifies undervalued trifecta (三連複) combin
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Data Schema & Leak Audit** - Define the 3-layer schema (raw/standard/feature) with column types, and build a pre-race/post-race audit mechanism to prevent data leakage (completed 2026-06-11)
-- [ ] **Phase 2: Kaggle Data Pipeline** - Convert Kaggle race result CSVs (2015-2021) to standard-layer Parquet with validated schema conformance
+- [x] **Phase 2: Kaggle Data Pipeline** - Convert Kaggle race result CSVs (2015-2021) to standard-layer Parquet with validated schema conformance (completed 2026-06-11)
 - [ ] **Phase 3: Feature Engineering** - Generate ML-ready features (race, horse form, jockey/trainer stats, recent performance) from standard data with temporal safety
 - [ ] **Phase 4: Scraping Infrastructure & Race Data** - Build fetch/parse/normalize pipeline and scrape 2022-2024 JRA race results into standard Parquet
 - [ ] **Phase 5: Trifecta Odds Scraping** - Scrape all-combination trifecta odds (up to 816 per race) for 2022-2024 and save in standard format
@@ -84,7 +84,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03: Data quality validators (8 D-05 checks) + end-to-end pipeline validation (DATA-02)
+- [x] 02-03: Data quality validators (8 D-05 checks) + end-to-end pipeline validation (DATA-02)
 
 ### Phase 3: Feature Engineering
 
@@ -249,7 +249,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
-| 2. Kaggle Data Pipeline | 2/3 | In Progress|  |
+| 2. Kaggle Data Pipeline | 3/3 | Complete   | 2026-06-11 |
 | 3. Feature Engineering | 0/? | Not started | - |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
