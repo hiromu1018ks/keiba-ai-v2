@@ -31,9 +31,9 @@ from src.schemas.audit import audit_leakage
 _DTYPE_COMPAT: dict[str, set[str]] = {
     "str": {"object", "string", "str", "unicode"},
     "int": {"int64", "Int64", "int32", "Int32", "int16", "Int16", "int8", "Int8",
-            "uint8", "uint16", "uint32", "uint64", "object"},
+            "uint8", "uint16", "uint32", "uint64"},
     "float": {"float64", "float32", "Float64", "Float32"},
-    "bool": {"bool", "boolean", "object"},
+    "bool": {"bool", "boolean"},
 }
 
 
