@@ -12,7 +12,9 @@ JRA中央競馬を対象に、三連複で期待値の高い買い目を抽出�
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Kaggleデータの5テーブル（race/entry/result/odds_trifecta/payoff）のPydanticスキーマが定義済み（91フィールド、pre/post-raceメタデータ付き） — Validated in Phase 1: Data Schema & Leak Audit
+- [x] データリーク監査関数が実装済み（post-raceカラムの自動検出、DataFrameとの照合） — Validated in Phase 1: Data Schema & Leak Audit
+- [x] 66カラムのKaggle分類網羅性が機械的に検証済み — Validated in Phase 1: Data Schema & Leak Audit
 
 ### Active
 
@@ -87,4 +89,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-10 after initialization*
+*Last updated: 2026-06-11 after Phase 1 completion*
