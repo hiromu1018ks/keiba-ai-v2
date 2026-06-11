@@ -21,7 +21,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.pipeline.column_mapping import TABLE_TO_SCHEMA
+from src.pipeline.column_mapping import KAGGLE_COLUMN_MAP, ODDS_COLUMN_MAP, TABLE_TO_SCHEMA
 from src.schemas.audit import audit_leakage
 
 
@@ -402,6 +402,47 @@ def validate_referential_integrity(parquet_dir: Path) -> list[str]:
 # Check 7: Sample rows
 # ---------------------------------------------------------------------------
 
+def _find_csv(source_dir: Path, pattern: str) -> Path | None:
+    """Find a CSV file using a glob pattern, preferring exact match.
+
+    Checks for exact filename first, then falls back to glob pattern.
+    Returns None if no matching file is found.
+    """
+    # Try exact match first (pattern may be a literal filename)
+    exact = source_dir / pattern
+    if exact.exists():
+        return exact
+    # Try glob for patterns like *_race_result.csv
+    candidates = sorted(source_dir.glob(pattern))
+    if candidates:
+        return candidates[0]
+    # Fallback: try stripping the glob prefix (e.g., *_race_result.csv -> race_result.csv)
+    if pattern.startswith("*"):
+        stripped = pattern[1:]  # e.g., "_race_result.csv"
+        exact2 = source_dir / stripped[1:]  # strip leading underscore -> "race_result.csv"
+        if exact2.exists():
+            return exact2
+    return None
+
+
+def _build_eng_to_jp_map(table_name: str) -> dict[str, str]:
+    """Build reverse mapping from English Parquet names to Japanese CSV names.
+
+    For race/entry/result tables, uses KAGGLE_COLUMN_MAP.
+    For odds_trifecta/payoff, uses ODDS_COLUMN_MAP.
+    Always includes race_id -> レースID mapping.
+    """
+    eng_to_jp: dict[str, str] = {"race_id": "レースID"}
+    if table_name in ("race", "entry", "result"):
+        for jp_name, (tbl, eng_name) in KAGGLE_COLUMN_MAP.items():
+            if tbl == table_name:
+                eng_to_jp[eng_name] = jp_name
+    elif table_name in ("odds_trifecta", "payoff"):
+        for jp_name, eng_name in ODDS_COLUMN_MAP.items():
+            eng_to_jp[eng_name] = jp_name
+    return eng_to_jp
+
+
 def validate_sample_rows(
     source_dir: Path,
     parquet_dir: Path,
@@ -410,7 +451,8 @@ def validate_sample_rows(
     """Spot-check random rows between source CSV and Parquet files.
 
     For each table, picks n_samples random rows from Parquet and verifies
-    their values match the corresponding source CSV rows.
+    their values match the corresponding source CSV rows using a reverse
+    column mapping (English Parquet names -> Japanese CSV names).
 
     Note: This is a simplified check -- for the race/entry/result tables
     derived from race_result.csv, it checks against the CSV. For
@@ -430,13 +472,13 @@ def validate_sample_rows(
     source_dir = Path(source_dir)
     parquet_dir = Path(parquet_dir)
 
-    # Map table to source CSV file
-    table_to_csv = {
-        "race": "race_result.csv",
-        "entry": "race_result.csv",
-        "result": "race_result.csv",
-        "odds_trifecta": "odds.csv",
-        "payoff": "odds.csv",
+    # Map table to CSV glob pattern (handles both short and full Kaggle names)
+    table_to_csv_pattern = {
+        "race": "*_race_result.csv",
+        "entry": "*_race_result.csv",
+        "result": "*_race_result.csv",
+        "odds_trifecta": "*_odds.csv",
+        "payoff": "*_odds.csv",
     }
 
     # Map table to key column for lookups
@@ -448,14 +490,14 @@ def validate_sample_rows(
         "payoff": "race_id",
     }
 
-    for table_name, csv_file in table_to_csv.items():
+    for table_name, csv_pattern in table_to_csv_pattern.items():
         parquet_path = parquet_dir / f"{table_name}.parquet"
         if not parquet_path.exists():
             continue
 
-        csv_path = source_dir / csv_file
-        if not csv_path.exists():
-            logger.debug(f"Source CSV not found for {table_name}: {csv_path}")
+        csv_path = _find_csv(source_dir, csv_pattern)
+        if csv_path is None:
+            logger.debug(f"Source CSV not found for {table_name}: {csv_pattern}")
             continue
 
         try:
@@ -468,24 +510,36 @@ def validate_sample_rows(
             n = min(n_samples, len(pq_df))
             sample = pq_df.sample(n=n, random_state=42)
 
-            # Read source CSV
-            source_df = pd.read_csv(csv_path, encoding="utf-8-sig", nrows=1000)
+            # Read source CSV (full file, no row limit)
+            source_df = pd.read_csv(csv_path, encoding="utf-8-sig")
             key_col = key_columns.get(table_name, "race_id")
 
-            # Determine join key: try English name first, then Japanese mapping
-            csv_key = key_col
-            if key_col not in source_df.columns:
-                # Try to find Japanese equivalent
-                jp_map = {"race_id": "レースID"}
-                csv_key = jp_map.get(key_col, key_col)
+            # Build reverse mapping: English Parquet -> Japanese CSV
+            eng_to_jp = _build_eng_to_jp_map(table_name)
 
+            # Determine the CSV key column name
+            csv_key = eng_to_jp.get(key_col, key_col)
             if csv_key not in source_df.columns:
                 # Can't verify without matching key -- skip
                 results[table_name] = True
                 continue
 
-            # Merge sample rows with source CSV on the key column
-            common_cols = [c for c in sample.columns if c in source_df.columns]
+            # Build list of comparable columns: English names that have
+            # a Japanese equivalent present in the CSV
+            comparable_cols = [
+                eng_col for eng_col in sample.columns
+                if eng_col in eng_to_jp and eng_to_jp[eng_col] in source_df.columns
+            ]
+
+            if not comparable_cols:
+                logger.debug(
+                    f"No comparable columns for {table_name} "
+                    f"(Parquet cols: {list(sample.columns)}, "
+                    f"CSV cols: {list(source_df.columns)[:5]}...)"
+                )
+                results[table_name] = True
+                continue
+
             # Build a minimal source lookup on the key column
             source_lookup = source_df.drop_duplicates(subset=[csv_key])
 
@@ -505,9 +559,10 @@ def validate_sample_rows(
                     continue
 
                 source_row = source_match.iloc[0]
-                for col in common_cols:
-                    pq_val = pq_row[col]
-                    src_val = source_row[col]
+                for eng_col in comparable_cols:
+                    jp_col = eng_to_jp[eng_col]
+                    pq_val = pq_row[eng_col]
+                    src_val = source_row[jp_col]
                     # Compare values (handle NaN)
                     pq_na = pd.isna(pq_val)
                     src_na = pd.isna(src_val)

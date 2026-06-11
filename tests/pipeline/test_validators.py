@@ -424,8 +424,13 @@ class TestValidateSampleRows:
         raw_dir.mkdir()
         parquet_dir.mkdir()
 
-        # Create a simple CSV source and matching Parquet
-        csv_content = "race_id,course_code,distance\n001,01,2000\n002,02,1400\n"
+        # Create a CSV source with Japanese column names (matching real Kaggle format)
+        # and a matching Parquet with English column names
+        csv_content = (
+            "レースID,競馬場コード,距離(m)\n"
+            "001,01,2000\n"
+            "002,02,1400\n"
+        )
         (raw_dir / "race_result.csv").write_text(csv_content, encoding="utf-8-sig")
 
         race_df = pd.DataFrame({
@@ -447,8 +452,12 @@ class TestValidateSampleRows:
         raw_dir.mkdir()
         parquet_dir.mkdir()
 
-        # Use consistent race_id types (both as string) so the key matching works
-        csv_content = "race_id,course_code,distance\nR001,01,2000\nR002,02,1400\n"
+        # Use Japanese CSV column names with consistent race_id values
+        csv_content = (
+            "レースID,競馬場コード,距離(m)\n"
+            "R001,01,2000\n"
+            "R002,02,1400\n"
+        )
         (raw_dir / "race_result.csv").write_text(csv_content, encoding="utf-8-sig")
 
         # Different distance value for R002
