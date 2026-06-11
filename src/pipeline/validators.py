@@ -33,7 +33,7 @@ _DTYPE_COMPAT: dict[str, set[str]] = {
     "int": {"int64", "Int64", "int32", "Int32", "int16", "Int16", "int8", "Int8",
             "uint8", "uint16", "uint32", "uint64"},
     "float": {"float64", "float32", "Float64", "Float32"},
-    "bool": {"bool", "boolean"},
+    "bool": {"bool", "boolean", "object"},  # object for nullable bool (True/None)
 }
 
 
@@ -166,6 +166,11 @@ def validate_schema_conformance(parquet_dir: Path) -> dict[str, list[str]]:
                     continue
                 if expected_cat == "str" and actual_dtype == "object":
                     continue  # str is stored as object, this is fine
+                # Optional fields where all values are None get stored as
+                # object dtype (pandas can't infer type from empty data)
+                if actual_dtype == "object" and not field_info.is_required():
+                    if df[field_name].isna().all():
+                        continue
                 errors.append(
                     f"Dtype mismatch for {field_name}: "
                     f"expected {expected_cat}-compatible, got {actual_dtype}"
@@ -425,21 +430,26 @@ def _find_csv(source_dir: Path, pattern: str) -> Path | None:
     return None
 
 
-def _build_eng_to_jp_map(table_name: str) -> dict[str, str]:
+def _build_eng_to_jp_map(table_name: str) -> dict[str, list[str]]:
     """Build reverse mapping from English Parquet names to Japanese CSV names.
+
+    Returns dict mapping each English name to a list of ALL possible Japanese
+    source column names. When multiple CSV columns map to the same English name
+    (coalesced by the converter), all are included so the comparison can check
+    any of them.
 
     For race/entry/result tables, uses KAGGLE_COLUMN_MAP.
     For odds_trifecta/payoff, uses ODDS_COLUMN_MAP.
     Always includes race_id -> レースID mapping.
     """
-    eng_to_jp: dict[str, str] = {"race_id": "レースID"}
+    eng_to_jp: dict[str, list[str]] = {"race_id": ["レースID"]}
     if table_name in ("race", "entry", "result"):
         for jp_name, (tbl, eng_name) in KAGGLE_COLUMN_MAP.items():
             if tbl == table_name:
-                eng_to_jp[eng_name] = jp_name
+                eng_to_jp.setdefault(eng_name, []).append(jp_name)
     elif table_name in ("odds_trifecta", "payoff"):
         for jp_name, eng_name in ODDS_COLUMN_MAP.items():
-            eng_to_jp[eng_name] = jp_name
+            eng_to_jp.setdefault(eng_name, []).append(jp_name)
     return eng_to_jp
 
 
@@ -481,11 +491,13 @@ def validate_sample_rows(
         "payoff": "*_odds.csv",
     }
 
-    # Map table to key column for lookups
+    # Map table to key column(s) for lookups.
+    # Entry and result have multiple rows per race (one per horse),
+    # so use horse_race_id (unique per horse per race) for matching.
     key_columns = {
         "race": "race_id",
-        "entry": "race_id",
-        "result": "race_id",
+        "entry": "horse_race_id",
+        "result": "horse_race_id",
         "odds_trifecta": "race_id",
         "payoff": "race_id",
     }
@@ -511,24 +523,29 @@ def validate_sample_rows(
             sample = pq_df.sample(n=n, random_state=42)
 
             # Read source CSV (full file, no row limit)
-            source_df = pd.read_csv(csv_path, encoding="utf-8-sig")
+            source_df = pd.read_csv(csv_path, encoding="utf-8-sig", low_memory=False)
             key_col = key_columns.get(table_name, "race_id")
 
             # Build reverse mapping: English Parquet -> Japanese CSV
             eng_to_jp = _build_eng_to_jp_map(table_name)
 
-            # Determine the CSV key column name
-            csv_key = eng_to_jp.get(key_col, key_col)
+            # Determine the CSV key column name (first candidate)
+            csv_key_candidates = eng_to_jp.get(key_col, [key_col])
+            csv_key = next(
+                (c for c in csv_key_candidates if c in source_df.columns),
+                csv_key_candidates[0] if isinstance(csv_key_candidates, list) else csv_key_candidates,
+            )
             if csv_key not in source_df.columns:
                 # Can't verify without matching key -- skip
                 results[table_name] = True
                 continue
 
-            # Build list of comparable columns: English names that have
-            # a Japanese equivalent present in the CSV
+            # Build list of comparable columns: English names where at
+            # least one Japanese equivalent is present in the CSV
             comparable_cols = [
                 eng_col for eng_col in sample.columns
-                if eng_col in eng_to_jp and eng_to_jp[eng_col] in source_df.columns
+                if eng_col in eng_to_jp
+                and any(jp in source_df.columns for jp in eng_to_jp[eng_col])
             ]
 
             if not comparable_cols:
@@ -560,17 +577,66 @@ def validate_sample_rows(
 
                 source_row = source_match.iloc[0]
                 for eng_col in comparable_cols:
-                    jp_col = eng_to_jp[eng_col]
+                    jp_candidates = eng_to_jp[eng_col]
                     pq_val = pq_row[eng_col]
+
+                    # For multi-mapped columns (coalesced from several
+                    # CSV cols), True in Parquet means ANY source was
+                    # non-empty.  Try each candidate.
+                    if isinstance(pq_val, bool) and len(jp_candidates) > 1:
+                        any_non_empty = any(
+                            jp in source_row.index
+                            and pd.notna(source_row[jp])
+                            and str(source_row[jp]).strip() != ""
+                            for jp in jp_candidates
+                        )
+                        if pq_val != any_non_empty:
+                            all_match = False
+                            break
+                        continue
+
+                    # Pick first candidate present in CSV
+                    jp_col = next(
+                        (c for c in jp_candidates if c in source_row.index),
+                        jp_candidates[0],
+                    )
                     src_val = source_row[jp_col]
-                    # Compare values (handle NaN)
+                    # Compare values (handle NaN and type conversions)
                     pq_na = pd.isna(pq_val)
                     src_na = pd.isna(src_val)
                     if pq_na and src_na:
                         continue
                     if pq_na != src_na:
+                        # Single-mapped flag: NA in source but True in
+                        # Parquet -- check remaining candidates
+                        if isinstance(pq_val, bool):
+                            any_non_empty = any(
+                                jp in source_row.index
+                                and pd.notna(source_row[jp])
+                                and str(source_row[jp]).strip() != ""
+                                for jp in jp_candidates
+                            )
+                            if pq_val == any_non_empty:
+                                continue
                         all_match = False
                         break
+
+                    # Handle flag columns: True matches any non-empty
+                    # source value (e.g. "1", "○"); None already handled
+                    if isinstance(pq_val, bool):
+                        if pq_val and str(src_val).strip() == "":
+                            all_match = False
+                            break
+                        continue
+
+                    # Try numeric comparison before string (handles
+                    # zero-padded strings like "05" vs 5)
+                    try:
+                        if float(str(pq_val)) == float(str(src_val)):
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
                     # Compare as strings for consistency
                     if str(pq_val) != str(src_val):
                         all_match = False
