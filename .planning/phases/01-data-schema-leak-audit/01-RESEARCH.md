@@ -578,22 +578,19 @@ def export_schema_documentation() -> dict:
 
 **If this table is empty:** N/A -- assumptions present, see above.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **D-10 says `metadata=` but Pydantic v2 `metadata` parameter is for constraint objects, not arbitrary dicts.**
    - What we know: `json_schema_extra` works perfectly for arbitrary key-value metadata. `metadata` is for Pydantic constraint objects like `Gt`, `Lt`, `Interval`.
-   - What's unclear: Whether the user specifically wants `metadata=` parameter or just "metadata-driven classification" in general.
-   - Recommendation: Use `json_schema_extra={"pre_race": True/False}` and note this satisfies D-10's intent. The planner should confirm.
+   - **RESOLVED:** Plans 01-01 through 01-03 consistently use `json_schema_extra={"pre_race": True/False}`. This satisfies D-10's intent (metadata-driven classification). `metadata=` was incorrect for arbitrary dicts in Pydantic v2.
 
 2. **Payoff table data source:**
    - What we know: No direct Kaggle payoff data. Trifecta odds (top-3 combos, 54% coverage) are the closest data.
-   - What's unclear: Whether Phase 1 should define a payoff schema with expected data fields or defer entirely.
-   - Recommendation: Define the schema based on what Phase 8 (EV calculation) needs: `race_id`, `combination` (3 horse numbers), `odds`, `payoff_amount`. Leave data population to Phase 2 (partial, from odds.csv) and Phase 5 (full, from scraping).
+   - **RESOLVED:** Plan 01-02 Task 2 defines PayoffSchema as a contract schema (no data source yet). Data population deferred to Phase 2 (partial, from odds.csv) and Phase 5 (full, from scraping). Schema fields: `race_id`, `combination`, `odds`, `payoff_amount`.
 
 3. **`レース記号/` columns: 20 individual boolean fields or consolidated?**
    - What we know: 20 sparse boolean columns, most empty for 90%+ rows. Values are the column name itself (e.g., "牝") or empty string.
-   - What's unclear: Whether to keep them as individual Optional[bool] fields or consolidate into a single `list[str]` field.
-   - Recommendation: Claude's discretion. Individual bool fields are more explicit and schema-friendly. Consolidation is more compact. Suggest individual bool fields for schema clarity.
+   - **RESOLVED:** Plan 01-01 uses individual `Optional[bool]` fields for each flag column (e.g., `is_filly`, `is_colt`, etc.). This provides explicit schema clarity and is directly testable via KAGGLE_COLUMN_MAP in Plan 01-04.
 
 ## Environment Availability
 
