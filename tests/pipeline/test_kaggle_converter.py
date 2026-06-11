@@ -12,14 +12,11 @@ Tests cover:
 - audit_leakage() integration
 """
 
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
-
-from src.pipeline.column_mapping import FLAG_COLUMNS
 
 
 class TestDateFilter:
@@ -65,7 +62,7 @@ class TestDateFilter:
         entry_df = pd.read_parquet(result["entry"])
 
         # Should include 2015 and 2016 flat races
-        race_ids = set(entry_df["race_id"].unique())
+        race_ids = set(str(rid) for rid in entry_df["race_id"].unique())
         assert "201501010101" in race_ids  # 2015 flat race A
         assert "201502020202" in race_ids  # 2015 flat race B
         assert "201603030303" in race_ids  # 2016 flat race
@@ -238,7 +235,8 @@ class TestFlagConversion:
 
         # Get all flag column names (race_flag_*)
         flag_cols = [col for col in race_df.columns if col.startswith("race_flag_")]
-        assert len(flag_cols) == 20
+        # 20 CSV flag columns coalesce into 13 unique schema fields
+        assert len(flag_cols) == 13
 
         # All flag values should be True, None, or pd.NA
         for col in flag_cols:

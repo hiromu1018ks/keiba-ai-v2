@@ -28,7 +28,6 @@ def sample_race_result_df() -> pd.DataFrame:
     Total unique flat race_ids after filtering: 3 (2015A, 2015B, 2016A)
     Total rows after filtering: 7 (5 from 2015 flat + 2 from 2016 flat)
     """
-    n_rows = 10
     data: dict[str, list] = {}
 
     # Row 1: Identification
