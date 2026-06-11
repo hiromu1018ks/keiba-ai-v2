@@ -85,14 +85,14 @@ def validate_row_counts(
     results: dict[str, bool] = {}
     parquet_dir = Path(parquet_dir)
 
+    import pyarrow.parquet as pq
+
     for table_name, expected_count in source_counts.items():
         parquet_path = parquet_dir / f"{table_name}.parquet"
         if not parquet_path.exists():
             logger.warning(f"Missing Parquet file: {parquet_path}")
             results[table_name] = False
             continue
-
-        import pyarrow.parquet as pq
 
         parquet_file = pq.ParquetFile(parquet_path)
         actual_count = parquet_file.metadata.num_rows
