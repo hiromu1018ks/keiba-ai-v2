@@ -699,6 +699,7 @@ def run_all_validations(
     raw_dir: Path,
     parquet_dir: Path,
     source_counts: dict[str, int] | None = None,
+    source_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run all 8 D-05 validation checks and aggregate results.
 
@@ -706,6 +707,10 @@ def run_all_validations(
         raw_dir: Directory containing source CSV files.
         parquet_dir: Directory containing Parquet files to validate.
         source_counts: Optional expected row counts. If None, skips row count check.
+        source_stats: Optional source statistics for null rate and distribution
+            checks. Structure: {table: {"null_rates": {col: rate},
+            "distributions": {col: {min, max, mean}}}}.
+            If None, checks 4 and 5 pass vacuously.
 
     Returns:
         Dict with results for each check and an overall_pass boolean.
@@ -726,11 +731,17 @@ def run_all_validations(
     # Check 3: Audit
     audit_result = validate_audit(parquet_dir)
 
-    # Check 4: Null rates (skip if no source stats provided)
-    null_rates_result: dict[str, dict[str, float]] = {}
+    # Check 4: Null rates
+    if source_stats is not None:
+        null_rates_result = validate_null_rates(source_stats, parquet_dir)
+    else:
+        null_rates_result: dict[str, dict[str, float]] = {}
 
-    # Check 5: Distributions (skip if no source stats provided)
-    distributions_result: dict[str, dict[str, dict]] = {}
+    # Check 5: Distributions
+    if source_stats is not None:
+        distributions_result = validate_distributions(source_stats, parquet_dir)
+    else:
+        distributions_result: dict[str, dict[str, dict]] = {}
 
     # Check 6: Referential integrity
     integrity_errors = validate_referential_integrity(parquet_dir)
@@ -766,9 +777,21 @@ def run_all_validations(
     # are expected to have post-race columns, so we don't fail on those
     audit_pass = True  # Audit is informational, not a pass/fail check
 
-    # Null rates and distributions are informational when no source stats provided
-    null_pass = True
-    dist_pass = True
+    # Null rates: pass if no source stats provided, otherwise check for flagged columns
+    if source_stats is not None:
+        null_pass = all(
+            len(flagged) == 0 for flagged in null_rates_result.values()
+        )
+    else:
+        null_pass = True
+
+    # Distributions: pass if no source stats provided, otherwise check for mismatches
+    if source_stats is not None:
+        dist_pass = all(
+            len(mismatches) == 0 for mismatches in distributions_result.values()
+        )
+    else:
+        dist_pass = True
 
     all_checks_passed = (
         row_pass and schema_pass and audit_pass and null_pass
