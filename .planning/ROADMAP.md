@@ -69,15 +69,22 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. Kaggle CSV files are read and converted to standard-layer Parquet with correct schema conformance (validated by Pydantic or schema checks)
-  2. The 2015-2021 date range is correctly filtered from the full Kaggle dataset (1986-2021), and output files are partitioned by year
+  2. The 2015-2021 date range is correctly filtered from the full Kaggle dataset (1986-2021), and output is single-file Parquet per table (per D-07)
   3. Row counts and key distributions in the output Parquet match expectations from the source CSV (no silent data loss)
 
-**Plans**: TBD
-
+**Plans**: 3 plans
 Plans:
+**Wave 1**
 
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01: Column mapping + pyarrow + package structure (DATA-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02: CSV-to-Parquet converter + test fixtures + integration tests (DATA-02)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-03: Data quality validators (8 D-05 checks) + end-to-end pipeline validation (DATA-02)
 
 ### Phase 3: Feature Engineering
 
@@ -242,7 +249,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
-| 2. Kaggle Data Pipeline | 0/? | Not started | - |
+| 2. Kaggle Data Pipeline | 0/3 | Not started | - |
 | 3. Feature Engineering | 0/? | Not started | - |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
