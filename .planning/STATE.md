@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-06-11T11:50:47.267Z"
-last_activity: 2026-06-11 -- Phase 02 planning complete
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-06-11T12:00:40.074Z"
+last_activity: 2026-06-11 -- Phase 02 execution started
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 6
   percent: 10
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 01 — data-schema-leak-audit
+**Current focus:** Phase 02 — kaggle-data-pipeline
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 02 (kaggle-data-pipeline) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 02 planning complete
+Last activity: 2026-06-11 -- Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 02 P01 | 240s | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,7 @@ Recent decisions affecting current work:
 - Roadmap created with 10 phases at fine granularity
 - Data scope limited to 2015-2024 (not full 1986-2021 Kaggle range)
 - Phase 4 (Scraping) has dependency only on Phase 1, enabling parallel work with Phases 2-3
+- [Phase 02]: Flag columns use actual CSV header names with parentheses/brackets for multi-to-single flag mapping
 
 ### Pending Todos
 
@@ -80,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-11T07:01:04.886Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-kaggle-data-pipeline/02-CONTEXT.md
+Last session: 2026-06-11T12:00:40.070Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None

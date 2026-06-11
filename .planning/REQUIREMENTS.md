@@ -8,7 +8,7 @@
 ### Data Pipeline
 
 - [x] **DATA-01**: raw/standard/featureの3層スキーマを定義し、保存形式・カラム名・データ型を文書化できること
-- [ ] **DATA-02**: Kaggleデータ（1986-2021）をstandard形式に変換し、Parquetで出力できること
+- [x] **DATA-02**: Kaggleデータ（1986-2021）をstandard形式に変換し、Parquetで出力できること
 - [ ] **DATA-03**: standardデータからfeature層の基本特徴量（競馬場・距離・芝ダート・馬場状態・頭数・枠番・馬番・斤量・騎手・調教師・人気・単勝オッズ・近走成績・上がり3F・通過順）を生成できること
 - [x] **DATA-04**: データリーク防止のため、事前/事後カラムの監査機構があり、レース後に確定する情報が特徴量に混入しないことを検証できること
 - [ ] **DATA-05**: 2015-2024年のデータ（Kaggle + 自前収集）を共通standard形式でParquet出力し、統合して扱えること
@@ -89,7 +89,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DATA-01 | Phase 1 | Complete |
-| DATA-02 | Phase 2 | Pending |
+| DATA-02 | Phase 2 | Complete |
 | DATA-03 | Phase 3 | Pending |
 | DATA-04 | Phase 1 | Complete |
 | DATA-05 | Phase 6 | Pending |
