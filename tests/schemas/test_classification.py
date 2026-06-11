@@ -254,7 +254,7 @@ class TestKaggleColumnMapping:
             f"expected 16 (all fields)"
         )
         assert odds_post_race == set(OddsTrifectaSchema.model_fields.keys()), (
-            f"D-04 violation: Not all OddsTrifectaSchema fields are post-race"
+            "D-04 violation: Not all OddsTrifectaSchema fields are post-race"
         )
 
         # ResultSchema: all fields are post-race
