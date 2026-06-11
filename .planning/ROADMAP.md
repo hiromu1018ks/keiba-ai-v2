@@ -35,11 +35,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Standard schema defines all tables (race, entry, result, odds_trifecta, payoff) with column names, data types, and nullability documented
   2. Every column in the Kaggle dataset is classified as pre-race or post-race, and the classification is persisted in a machine-readable format
   3. An audit function can validate that a feature DataFrame contains only pre-race columns, flagging any post-race leakage
-**Plans**: TBD
+**Plans**: 5 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01: Project infrastructure + race/entry schema (DATA-01)
+- [ ] 01-02: result/odds_trifecta/payoff schema (DATA-01)
+- [ ] 01-03: Audit function + tests (DATA-04)
+- [ ] 01-04: Cross-cutting classification + export tests (DATA-01, DATA-04)
+- [ ] 01-05: Package integration + __init__.py finalization (DATA-01, DATA-04)
 
 ### Phase 2: Kaggle Data Pipeline
 **Goal**: Kaggle race data from 2015-2021 is converted to standard-layer Parquet files, giving the project a working raw-to-standard data pipeline
@@ -185,7 +188,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Data Schema & Leak Audit | 0/? | Not started | - |
+| 1. Data Schema & Leak Audit | 0/5 | Planned | - |
 | 2. Kaggle Data Pipeline | 0/? | Not started | - |
 | 3. Feature Engineering | 0/? | Not started | - |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
