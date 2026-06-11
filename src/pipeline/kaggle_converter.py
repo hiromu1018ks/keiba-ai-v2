@@ -80,7 +80,11 @@ def convert(
 
     # Step 2: Filter to 2015+ flat races
     logger.info("Filtering to 2015+ flat races")
-    df["レース日付"] = pd.to_datetime(df["レース日付"])
+    df["レース日付"] = pd.to_datetime(df["レース日付"], errors="coerce")
+    nat_count = df["レース日付"].isna().sum()
+    if nat_count > 0:
+        logger.warning(f"Dropped {nat_count} rows with unparseable dates")
+        df = df[df["レース日付"].notna()].copy()
     df = df[df["レース日付"] >= "2015-01-01"].copy()
     df = df[df["障害区分"] != "障害"].copy()
     logger.info(f"After filtering: {len(df)} rows")
