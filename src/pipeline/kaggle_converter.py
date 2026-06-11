@@ -384,15 +384,16 @@ def extract_odds_tables(
 
         subset = odds_df[["レースID", combo1_col, combo2_col, combo3_col, odds_col]].copy()
 
-        # Only keep rows where combo_1 is not NaN (has trifecta data)
-        subset = subset.dropna(subset=[combo1_col])
+        # Only keep rows where ALL combo values are present (PayoffSchema requires
+        # combo_1/2/3 as non-Optional int fields -- skip incomplete rows)
+        subset = subset.dropna(subset=[combo1_col, combo2_col, combo3_col])
 
         for _, row in subset.iterrows():
             payoff_rows.append({
                 "race_id": str(row["レースID"]),
-                "combo_1": int(row[combo1_col]) if pd.notna(row[combo1_col]) else None,
-                "combo_2": int(row[combo2_col]) if pd.notna(row[combo2_col]) else None,
-                "combo_3": int(row[combo3_col]) if pd.notna(row[combo3_col]) else None,
+                "combo_1": int(row[combo1_col]),
+                "combo_2": int(row[combo2_col]),
+                "combo_3": int(row[combo3_col]),
                 "odds": row[odds_col] / 10.0 if pd.notna(row[odds_col]) else None,
                 "payoff_amount": None,  # D-04: incomplete state
             })
