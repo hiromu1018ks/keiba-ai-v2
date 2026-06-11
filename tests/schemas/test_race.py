@@ -2,8 +2,6 @@
 
 import json
 
-import pytest
-
 from src.schemas.race import RaceSchema
 
 
@@ -84,7 +82,7 @@ class TestRaceSchemaFields:
 
     def test_race_schema_field_types(self):
         """RaceSchema fields have correct Python types."""
-        from typing import Optional, get_args, get_origin
+        from typing import get_args, get_origin
 
         # Non-nullable fields with expected base types
         non_nullable_str_fields = {
@@ -107,14 +105,7 @@ class TestRaceSchemaFields:
 
         for name, info in RaceSchema.model_fields.items():
             annotation = info.annotation
-            # Check if Optional
-            origin = get_origin(annotation)
-            is_optional = origin is Optional or (
-                origin is type(None) | type(...) and type(None) in get_args(annotation)
-            )
-            # Simpler check: is Optional if Union with NoneType
-            if origin is type(int | str | float | bool):  # skip for non-Union
-                pass
+            get_origin(annotation)  # used for type checking logic below
 
             if name in non_nullable_str_fields:
                 assert annotation is str, (
