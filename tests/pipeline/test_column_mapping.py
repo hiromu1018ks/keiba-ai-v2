@@ -4,7 +4,7 @@ Validates:
 - KAGGLE_COLUMN_MAP has exactly 66 entries, all (table, field) resolve to schema fields
 - ODDS_COLUMN_MAP has exactly 15 entries for trifecta columns from odds.csv
 - FLAG_COLUMNS has exactly 20 entries matching actual CSV headers
-- DTYPE_SPEC has exactly 23 entries (20 flags + 3 mixed-type columns)
+- DTYPE_SPEC has exactly 25 entries (20 flags + 3 mixed-type + 2 zero-padded)
 - TABLE_TO_SCHEMA maps each table name to the correct schema class
 - get_columns_for_table() returns correct subsets
 - Every KAGGLE_COLUMN_MAP Japanese column name is in the expected set of 66 names
@@ -220,10 +220,10 @@ class TestDtypeSpec:
             + "\n".join(errors)
         )
 
-    def test_dtype_spec_has_23_entries(self) -> None:
-        """DTYPE_SPEC has exactly 23 entries (20 flags + 3 mixed-type optional)."""
-        assert len(DTYPE_SPEC) == 23, (
-            f"Expected 23 entries in DTYPE_SPEC, got {len(DTYPE_SPEC)}"
+    def test_dtype_spec_has_25_entries(self) -> None:
+        """DTYPE_SPEC has exactly 25 entries (20 flags + 3 mixed-type + 2 zero-padded)."""
+        assert len(DTYPE_SPEC) == 25, (
+            f"Expected 25 entries in DTYPE_SPEC, got {len(DTYPE_SPEC)}"
         )
 
     def test_dtype_spec_covers_all_flag_columns(self) -> None:

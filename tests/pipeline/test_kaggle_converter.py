@@ -236,7 +236,8 @@ class TestFlagConversion:
         # Get all flag column names (race_flag_*)
         flag_cols = [col for col in race_df.columns if col.startswith("race_flag_")]
         # 20 CSV flag columns coalesce into 13 unique schema fields
-        assert len(flag_cols) == 13
+        # + 7 unmapped flags added as None = 20 total flag columns
+        assert len(flag_cols) == 20
 
         # All flag values should be True, None, or pd.NA
         for col in flag_cols:

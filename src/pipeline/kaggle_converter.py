@@ -31,6 +31,19 @@ from src.schemas.entry import EntrySchema
 from src.schemas.race import RaceSchema
 
 
+# Flag fields defined in RaceSchema but not present in Kaggle CSV.
+# These will be added as None columns in the race table.
+_UNMAPPED_RACE_FLAGS = [
+    "race_flag_amateur",
+    "race_flag_female_jockey",
+    "race_flag_listed",
+    "race_flag_maiden",
+    "race_flag_mare_only",
+    "race_flag_stakes",
+    "race_flag_young_horse",
+]
+
+
 def convert(
     raw_dir: Path = Path("data/raw/kaggle"),
     standard_dir: Path = Path("data/standard"),
@@ -79,6 +92,8 @@ def convert(
     # Step 4: Extract odds tables
     logger.info("Extracting odds tables")
     valid_race_ids = set(entry_df["race_id"].unique())
+    # Ensure odds レースID is string for matching against valid_race_ids
+    odds_df["レースID"] = odds_df["レースID"].astype(str)
     odds_trifecta_df, payoff_df = extract_odds_tables(odds_df, valid_race_ids)
 
     # Step 5: Write Parquet files
@@ -210,6 +225,9 @@ def split_race_entry_result(
     entry_rename["レースID"] = "race_id"
     result_rename["レースID"] = "race_id"
 
+    # Result table also needs horse_race_id (same as entry, 1:1 relationship)
+    result_rename["レース馬番ID"] = "horse_race_id"
+
     # Process finish position: renames 着順->finish_position, 着順注記->finish_note
     df = process_finish_position(df)
 
@@ -225,14 +243,33 @@ def split_race_entry_result(
     # Convert flag columns to Optional[bool]
     race_df = convert_flags_to_bool(race_df)
 
+    # Add unmapped race flag columns as None (not present in Kaggle CSV)
+    for flag_col in _UNMAPPED_RACE_FLAGS:
+        race_df[flag_col] = pd.NA
+
+    # Ensure string columns have string dtype
+    for str_col in ["race_id", "course_code", "race_date"]:
+        if str_col in race_df.columns:
+            race_df[str_col] = race_df[str_col].astype(str)
+
     # Entry table: select entry columns, rename
     entry_df = _select_and_rename(df, entry_rename)
+
+    # Ensure string columns in entry table
+    for str_col in ["horse_race_id", "race_id"]:
+        if str_col in entry_df.columns:
+            entry_df[str_col] = entry_df[str_col].astype(str)
 
     # Result table: select remaining result columns, rename, then add
     # the pre-processed finish_position and finish_note columns
     result_df = _select_and_rename(df, result_rename)
     result_df["finish_position"] = df["finish_position"].values
     result_df["finish_note"] = df["finish_note"].values
+
+    # Ensure string columns in result table
+    for str_col in ["horse_race_id", "race_id"]:
+        if str_col in result_df.columns:
+            result_df[str_col] = result_df[str_col].astype(str)
 
     return race_df, entry_df, result_df
 
@@ -330,6 +367,8 @@ def extract_odds_tables(
     odds_trifecta_df = odds_trifecta_df.rename(
         columns={**ODDS_COLUMN_MAP, "レースID": "race_id"}
     )
+    # Ensure race_id is string
+    odds_trifecta_df["race_id"] = odds_trifecta_df["race_id"].astype(str)
 
     # --- Payoff table ---
     # Unpivot trifecta1/2/3 into rows
@@ -350,7 +389,7 @@ def extract_odds_tables(
 
         for _, row in subset.iterrows():
             payoff_rows.append({
-                "race_id": row["レースID"],
+                "race_id": str(row["レースID"]),
                 "combo_1": int(row[combo1_col]) if pd.notna(row[combo1_col]) else None,
                 "combo_2": int(row[combo2_col]) if pd.notna(row[combo2_col]) else None,
                 "combo_3": int(row[combo3_col]) if pd.notna(row[combo3_col]) else None,

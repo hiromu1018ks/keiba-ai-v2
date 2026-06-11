@@ -12,6 +12,7 @@ from src.pipeline.column_mapping import (
     TABLE_TO_SCHEMA,
     get_columns_for_table,
 )
+from src.pipeline.validators import run_all_validations
 
 __all__ = [
     "KAGGLE_COLUMN_MAP",
@@ -20,4 +21,5 @@ __all__ = [
     "DTYPE_SPEC",
     "TABLE_TO_SCHEMA",
     "get_columns_for_table",
+    "run_all_validations",
 ]

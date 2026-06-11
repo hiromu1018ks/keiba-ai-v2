@@ -209,6 +209,8 @@ DTYPE_SPEC.update({
     "芝・ダート区分2": str,
     "内・外・襷区分": str,
     "馬場状態2": str,
+    "競馬場コード": str,  # Preserve zero-padded format (01-10)
+    "重賞回次": str,  # Read as string to avoid float64 when NaN
 })
 
 # ---------------------------------------------------------------------------
