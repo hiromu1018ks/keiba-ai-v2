@@ -15,7 +15,7 @@ Build a CLI-based system that identifies undervalued trifecta (三連複) combin
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Data Schema & Leak Audit** - Define the 3-layer schema (raw/standard/feature) with column types, and build a pre-race/post-race audit mechanism to prevent data leakage
+- [x] **Phase 1: Data Schema & Leak Audit** - Define the 3-layer schema (raw/standard/feature) with column types, and build a pre-race/post-race audit mechanism to prevent data leakage (completed 2026-06-11)
 - [ ] **Phase 2: Kaggle Data Pipeline** - Convert Kaggle race result CSVs (2015-2021) to standard-layer Parquet with validated schema conformance
 - [ ] **Phase 3: Feature Engineering** - Generate ML-ready features (race, horse form, jockey/trainer stats, recent performance) from standard data with temporal safety
 - [ ] **Phase 4: Scraping Infrastructure & Race Data** - Build fetch/parse/normalize pipeline and scrape 2022-2024 JRA race results into standard Parquet
@@ -43,23 +43,23 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01: Project infrastructure + race/entry schema (DATA-01)
+- [x] 01-01: Project infrastructure + race/entry schema (DATA-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02: result/odds_trifecta/payoff schema (DATA-01)
+- [x] 01-02: result/odds_trifecta/payoff schema (DATA-01)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03: Audit function + tests with EntrySchema and ResultSchema coverage (DATA-04)
+- [x] 01-03: Audit function + tests with EntrySchema and ResultSchema coverage (DATA-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-04: Kaggle 1-to-1 column mapping verification + JSON schema export function (DATA-01, DATA-04)
+- [x] 01-04: Kaggle 1-to-1 column mapping verification + JSON schema export function (DATA-01, DATA-04)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-05: Package integration + __init__.py re-exports (DATA-01, DATA-04)
+- [x] 01-05: Package integration + __init__.py re-exports (DATA-01, DATA-04)
 
 ### Phase 2: Kaggle Data Pipeline
 
@@ -241,7 +241,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Data Schema & Leak Audit | 0/5 | Planned | - |
+| 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 0/? | Not started | - |
 | 3. Feature Engineering | 0/? | Not started | - |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
