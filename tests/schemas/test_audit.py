@@ -5,7 +5,6 @@ information from leaking into features.
 """
 
 import pandas as pd
-import pytest
 from loguru import logger
 
 from src.schemas.audit import audit_leakage, get_post_race_columns
