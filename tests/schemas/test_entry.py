@@ -1,7 +1,7 @@
 """Tests for EntrySchema - standard-layer entry table with mixed pre/post-race classification."""
 
 import json
-from typing import get_args, get_origin
+from typing import get_args
 
 from src.schemas.entry import EntrySchema
 
