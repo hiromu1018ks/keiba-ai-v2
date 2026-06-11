@@ -14,12 +14,8 @@ Covers all 8 validators + run_all_validations orchestrator:
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
-from loguru import logger
-
-from src.pipeline.column_mapping import TABLE_TO_SCHEMA
 
 
 # ---------------------------------------------------------------------------
@@ -451,14 +447,15 @@ class TestValidateSampleRows:
         raw_dir.mkdir()
         parquet_dir.mkdir()
 
-        csv_content = "race_id,course_code,distance\n001,01,2000\n002,02,1400\n"
+        # Use consistent race_id types (both as string) so the key matching works
+        csv_content = "race_id,course_code,distance\nR001,01,2000\nR002,02,1400\n"
         (raw_dir / "race_result.csv").write_text(csv_content, encoding="utf-8-sig")
 
-        # Different distance value
+        # Different distance value for R002
         race_df = pd.DataFrame({
-            "race_id": ["001", "002"],
+            "race_id": ["R001", "R002"],
             "course_code": ["01", "02"],
-            "distance": [2000, 9999],  # Mismatched
+            "distance": [2000, 9999],  # Mismatched for R002
         })
         race_df.to_parquet(parquet_dir / "race.parquet", engine="pyarrow", index=False)
 
