@@ -114,7 +114,7 @@ Plans:
 
 **Wave 4** *(blocked on 03-03)*
 
-- [ ] 03-04: Target variable (6 result_status categories) + debut flag (DATA-03)
+- [x] 03-04: Target variable (6 result_status categories) + debut flag (DATA-03)
 
 **Wave 5** *(blocked on 03-04)*
 
@@ -264,7 +264,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
-| 3. Feature Engineering | 3/5 | In Progress|  |
+| 3. Feature Engineering | 4/5 | In Progress|  |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
