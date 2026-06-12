@@ -1,7 +1,9 @@
 ---
 phase: 3
 reviewers: [codex]
-reviewed_at: "2026-06-12T13:45:00+09:00"
+reviewed_at: "2026-06-12T15:30:00+09:00"
+cycle: 2
+previous_cycle_highs: 7
 plans_reviewed:
   - 03-01-PLAN.md
   - 03-02-PLAN.md
@@ -10,233 +12,79 @@ plans_reviewed:
   - 03-05-PLAN.md
 ---
 
-# Cross-AI Plan Review — Phase 3
+# Cross-AI Plan Review — Phase 3 (Cycle 2)
 
-## Codex Review
+## Codex Review (Cycle 2 — Re-review of Revised Plans)
 
-### Overall Summary
+### Summary
 
-The plans cover the required feature categories and include substantial testing, but several temporal leakage and data identity issues could invalidate backtest results. The most serious risks are globally fitted finish-time normalization, same-race leakage in jockey/trainer statistics, ambiguous implementation of the 100-rides/one-year window, and grouping horses by name rather than a stable identifier. These should be resolved before implementation proceeds.
-
----
-
-### PLAN 03-01 Review
-
-#### Summary
-
-The module decomposition is reasonable and establishes a testable foundation. However, merge cardinality, missing-result handling, entity identity, and deterministic chronological ordering need stronger definitions because every downstream lag and target feature depends on them.
-
-#### Strengths
-
-- Clear separation between loading, race context, and horse-level features.
-- Explicit exclusion of popularity and win odds.
-- `field_size` is derived rather than trusted from potentially inconsistent source data.
-- Sorting before lag generation is recognized as necessary.
-- Test fixtures are introduced early.
-
-#### Concerns
-
-- **HIGH:** `horse_name` is not a reliable entity key. Different horses can share names, and formatting changes can split one horse into multiple histories.
-- **HIGH:** Sorting only by `[horse_name, race_date]` is ambiguous when a horse has multiple records on one date or dates are missing. Stable race ordering is required.
-- **HIGH:** An inner merge with results may remove scratched/removed entries before Plan 03-04 can classify them.
-- **HIGH:** Merge cardinality is unspecified. Duplicate keys could silently multiply rows and corrupt all features.
-- **MEDIUM:** `field_size` needs a defined policy for scratched and removed horses: declared runners versus actual starters.
-- **MEDIUM:** Required-column validation and dtype/date parsing behavior are not specified.
-- **MEDIUM:** Direct column selection may unintentionally retain duplicate columns or inconsistent suffixes after merging.
-- **LOW:** Defining an empty `MARGIN_MAP` in this plan creates cross-plan ownership ambiguity.
-
-#### Suggestions
-
-- Use `horse_id` as the grouping key. If unavailable, define and validate a documented surrogate key.
-- Sort by a deterministic key such as `race_datetime`, `race_id`, and `horse_number`.
-- Use explicit merge validation, such as `validate="many_to_one"` and `validate="one_to_one"`.
-- Assert row counts and uniqueness after each merge.
-- Preserve entries without results using a left join.
-- Define both `declared_field_size` and `starter_count` if both concepts are needed.
-- Add tests for duplicate keys, missing result rows, same-day races, and malformed dates.
-
-#### Risk Assessment
-
-**HIGH.** Identity or merge errors here silently contaminate every downstream feature and are difficult to detect after feature generation.
+The revisions improve merge preservation, current-row feature exclusion, and test intent, but they do not fully resolve the identity and temporal-leakage risks. The proposed `horse_key` cannot distinguish same-name horses, finish-time normalization leaks same-race results, and jockey/trainer rolling statistics are neither an exact nor scalable implementation of D-08. The Plan 05 "allowlist" is still dynamically derived by exclusion. Overall, substantial correction is required before implementation.
 
 ---
 
-### PLAN 03-02 Review
+### HIGH Resolution Status
 
-#### Summary
-
-Margin parsing is appropriately isolated and well tested, but the proposed global z-score computation introduces temporal leakage. Parsing and normalization also require stronger handling for malformed values and low-variance groups.
-
-#### Strengths
-
-- Compound margin forms are explicitly considered.
-- Finish-time parsing is separated from normalization.
-- Sparse course-distance combinations receive special handling.
-- The planned test count is appropriate for parsing-heavy logic.
-
-#### Concerns
-
-- **HIGH:** Computing mean and standard deviation from the full dataset leaks future race results into historical rows.
-- **HIGH:** The current row contributes to its own normalization. Shifting the normalized value later does not remove future-distribution leakage.
-- **MEDIUM:** Grouping only by course and distance may mix turf/dirt, course layouts, or materially different conditions.
-- **MEDIUM:** `<30` samples does not handle `std == 0`, invalid times, or groups containing many missing values.
-- **MEDIUM:** A fixed mapping of all observed margin strings may fail on whitespace, full-width characters, alternate separators, or unseen values.
-- **LOW:** The exact physical interpretation of textual margins is heuristic and should be documented.
-
-#### Suggestions
-
-- Compute normalization statistics using prior races only, with an expanding calculation followed by `shift(1)`.
-- Alternatively, fit normalization parameters on each training fold and apply them to validation/test data.
-- Include surface and other justified course configuration fields in the grouping key.
-- Normalize Unicode and whitespace before parsing.
-- Return `NaN` plus a parse-status indicator for unknown values rather than raising or silently coercing.
-- Add tests proving that adding future rows does not change earlier z-scores.
-
-#### Risk Assessment
-
-**HIGH.** The proposed global normalization violates the phase's temporal leakage requirement and can inflate backtest performance.
+| # | Original Concern | Status | Assessment |
+|---|------------------|--------|------------|
+| 1 | horse_name entity key instability | **UNRESOLVED** | `groupby("horse_name").transform("min")` assigns the same first date to every row sharing that name. Two different same-name horses therefore receive the same key. The claimed different-first-date test cannot pass against this implementation. |
+| 2 | Non-deterministic race ordering | **PARTIALLY RESOLVED** | race_number improves same-day ordering, but is not globally unique across courses/meetings. Use race_date, start_time, and race_id as deterministic tie-breakers. More importantly, feature calculations must honor race boundaries, not merely row order. |
+| 3 | Global z-score temporal leakage | **PARTIALLY RESOLVED** | Global future leakage is removed, but row-level expanding statistics leak results from earlier rows in the same race into later runners. Sorting only by race_date also leaves same-date ordering ambiguous. |
+| 4 | Jockey/trainer same-race leakage | **PARTIALLY RESOLVED** | Race-level computation prevents runners in the current race influencing each other. However, reducing trainer outcomes to `any(top3)`/`any(win)` and counting one record per race changes the requested runner/start-level rates and ride counts. |
+| 5 | D-08 "100 rides or 1 year" ambiguity | **UNRESOLVED** | Choosing whichever precomputed statistic has fewer observations is not equivalent to calculating statistics over the exact intersection. The last-100 constraint concerns valid starts, while the proposed structure is one row per person-race. |
+| 6 | Merge drops resultless entries | **RESOLVED** | A validated left join preserves entry rows and prevents result absence from reducing row count. |
+| 7 | Column-name audit insufficient | **PARTIALLY RESOLVED** | Current-row derivatives are explicitly excluded and temporal tests are added. However, `FEATURE_COLUMNS = all columns minus EXCLUDE_FROM_FEATURES` is a denylist, not an explicit allowlist, so newly introduced columns can still leak automatically. |
 
 ---
 
-### PLAN 03-03 Review
+### New Concerns
 
-#### Summary
+#### HIGH Severity
 
-The intended lag coverage matches the decisions, but this is the highest-risk plan. Temporal ordering, group isolation, same-race outcomes, and the one-year/100-rides window must be specified more precisely.
+1. **Same-race leakage in finish_time_zscore** — Each horse is a separate row. A shifted expanding calculation lets earlier runners from the current race influence later runners. Normalization parameters must be frozen at the race boundary and calculated only from earlier races. (Plan 03-02)
 
-#### Strengths
+2. **Resultless rows cannot be classified as scratched versus removed** — After the left join, both finish_position and finish_note are null. Plan 04 maps these rows to `no_result`, not `scratched` or `removed`. The pipeline needs an entry-side status field or another authoritative source for distinguishing these. (Plan 03-04)
 
-- Produces the required 25 raw lag and 20 aggregate columns.
-- Uses lagged values as the source for horse-history aggregates.
-- Supports partial history through `min_periods=1`.
-- Includes explicit testing for repeated horses and participants.
-- Recognizes that jockey/trainer statistics must exclude the current observation.
+3. **Scratched entries corrupt horse lag positions** — `groupby(...).shift(n)` runs over all entry rows. A scratched entry therefore consumes a lag position and can replace the most recent valid result with NaN. Lags must be based on prior valid starts and then joined back to all current entries. (Plan 03-03)
 
-#### Concerns
+4. **Trainer statistics have incorrect semantics** — For three trainer runners in one race, `any(top3)` produces one binary race outcome and `race_n_runners` is not incorporated into the proposed rates. Correct statistics require sums of wins/top-three finishes and counts of valid starts. (Plan 03-03)
 
-- **HIGH:** Grouping by `horse_name` can combine unrelated horses.
-- **HIGH:** Row-level `shift(1)` can leak outcomes from an earlier row in the same race or date into another runner's jockey/trainer statistics, especially for trainers with multiple runners.
-- **HIGH:** "Compute both and select smaller" does not clearly implement the intersection of "last 100 rides" and "last one year."
-- **HIGH:** Rolling operations on `prev_1_*` must be grouped by horse again; otherwise histories can cross group boundaries.
-- **HIGH:** Date-only ordering is insufficient for multiple races on one day.
-- **MEDIUM:** `rides` should represent prior valid starts, not all rows, and needs rules for scratches, removals, and missing results.
-- **MEDIUM:** Jockey/trainer names may change formatting or collide; stable IDs are preferable.
-- **MEDIUM:** Python-level rolling implementations could be expensive over 311K rows.
-- **MEDIUM:** Whether DNF/disqualified results count in denominators is unspecified.
-- **LOW:** Column naming and output ordering should be deterministic.
+#### MEDIUM Severity
 
-#### Suggestions
+5. **D-08 performance assumptions are weak** — Person-race data is not necessarily "much fewer" than 311K rows, especially for jockeys. Per-row 365-day filtering can become quadratic for high-volume people. Benchmarking and an indexed sliding-window algorithm are needed.
 
-- Group histories using stable horse, jockey, and trainer IDs.
-- Establish a total ordering using race datetime or date plus race sequence.
-- Compute jockey/trainer outcomes at race boundaries so no participant can see any result from the same race.
-- Define D-08 as records satisfying both `date > current_date - 1 year` and membership among the most recent 100 prior valid starts.
-- Add invariance tests: changing current or future outcomes must not alter the row's features.
-- Add tests for trainers with multiple runners in one race and multiple races on one day.
-- Benchmark the implementation on full data and avoid per-row Python callbacks.
+6. **FEATURE_COLUMNS is internally inconsistent** — The plan describes it as a constant, but also computes it dynamically inside generate(). A real allowlist should be statically constructed from named feature groups and validated for missing/unexpected columns.
 
-#### Risk Assessment
+7. **Debut specification contradicts itself** — Plan 04 behavior says an all-scratched horse has is_debut=True for all entries. The implementation and acceptance criteria say scratched rows have is_debut=False. One definition must be selected; the implementation's behavior is more coherent.
 
-**HIGH.** Incorrect implementation would create direct target leakage while still appearing to use `shift(1)` correctly.
+8. **field_size includes scratched/removed entries** — That may mean declared field size rather than actual starters. The intended model meaning should be explicit; potentially expose both declared_field_size and starter_count.
+
+9. **Race-level ordering needs stronger keys** — Use parsed timestamps and race_id as the final tie-breaker. Relying on input stability or race_number alone is insufficient for reproducibility.
+
+10. **Training output retains excluded rows** — features_train.parquet contains exclude_from_training, but the plan does not actually filter those rows. This is acceptable only if every downstream trainer is contractually required to filter them and tests enforce that contract.
 
 ---
 
-### PLAN 03-04 Review
+### Suggestions
 
-#### Summary
+1. Use a source-provided horse ID. If unavailable, create a persisted entity-resolution table with a generated ID and collision handling. Do not claim `name + grouped minimum date` distinguishes collisions.
 
-The target and auxiliary-column plan covers important result-status cases, but target semantics and debut logic require tighter definitions. It also depends on Plan 03-01 preserving entries without result rows.
+2. Define canonical race order as: `race_date, start_time, race_id`. Use race-level computations so all runners in one race receive statistics based on the identical prior-race snapshot.
 
-#### Strengths
+3. For finish-time normalization, aggregate historical observations by race or batch by race: compute prior-group moments -> assign to every runner in current race -> update moments.
 
-- Uses nullable integer type for the target.
-- Separates result status, DNF state, and training exclusion.
-- Explicitly addresses scratched, removed, disqualified, and demoted records.
-- Includes edge-case fixtures.
-- Keeps debut state separate from missing lag values.
+4. For person statistics, retain per-race aggregates as: valid_start_count, top3_count, win_count. Window sums of these quantities produce correct runner-level rates.
 
-#### Concerns
+5. Implement D-08 with a per-person deque/two-pointer window that removes starts older than 365 days, retains at most the latest 100 valid starts, and maintains running sums and counts.
 
-- **HIGH:** Scratched/removed rows cannot be classified if the earlier merge dropped resultless entries.
-- **HIGH:** `is_debut = cumcount() == 0` means "first row in this dataset," not necessarily career debut.
-- **HIGH:** Scratched entries may incorrectly consume the first-history position and make the next actual start non-debut.
-- **MEDIUM:** Future prediction rows and missing official results need `target_top3 = NA`, not `0`.
-- **MEDIUM:** Demotion handling is underspecified. "Keep finish position" must identify whether that is the official revised position.
-- **MEDIUM:** Dead heats and non-numeric position values need explicit parsing rules.
-- **MEDIUM:** `is_dnf` including disqualified runners may conflate "did not finish" with "finished but disqualified."
-- **LOW:** `exclude_from_training` overlaps with status and could become inconsistent unless derived centrally.
+6. Build FEATURE_COLUMNS explicitly from named lists such as race, horse, lag, and person features. Assert every allowed column exists, no unexpected column is selected, and no allowlisted column overlaps the exclusion set.
 
-#### Suggestions
-
-- Derive all target fields from one normalized result-status function.
-- Define target eligibility before assigning `0` or `1`.
-- Use official finalized placing for demotions and dead heats.
-- Distinguish `is_first_observed_start` from a verified `is_debut`.
-- Exclude cancelled entries from history counts.
-- Add tests for missing results, prediction rows, first observed records, and revised official placings.
-
-#### Risk Assessment
-
-**MEDIUM-HIGH.** The logic is manageable, but incorrect eligibility or debut handling will introduce label noise and misleading missing-history signals.
+7. Add tests for: two same-name horses with overlapping observation periods; multiple runners in one race receiving identical z-score parameters; scratches not consuming horse lag positions; trainer rate denominators with multiple same-race runners; exact D-08 expected values, not just expected counts; runtime/memory on the full 311K-row dataset.
 
 ---
 
-### PLAN 03-05 Review
+### Risk Assessment
 
-#### Summary
-
-The final integration plan addresses categoricals, auditing, persistence, and real-data validation. Its main weakness is reliance on a column-name leakage audit, which cannot detect temporal leakage or unsafe derived columns.
-
-#### Strengths
-
-- Includes end-to-end generation and real-data validation.
-- Uses native pandas categoricals for LightGBM.
-- Explicitly defines excluded result columns.
-- Provides separate training and prediction artifacts.
-- Includes a direct previous-race spot check.
-- Validates against the Phase 1 audit function.
-
-#### Concerns
-
-- **HIGH:** A schema or column-name audit cannot detect global z-score leakage or same-race rolling-stat leakage.
-- **HIGH:** `margin_numeric` and current-row `finish_time_zscore` are not listed in `EXCLUDE_FROM_FEATURES`; both are post-race values unless retained solely as internal lag sources.
-- **HIGH:** Auxiliary post-race columns must not enter `features_pred.parquet`.
-- **MEDIUM:** Sampling 100 horses may miss systematic ordering and identity defects.
-- **MEDIUM:** Writing all historical rows as `features_pred.parquet` is semantically unclear; prediction data normally has no results or targets.
-- **MEDIUM:** Category domains may differ between training and inference unless category vocabularies are persisted or aligned.
-- **MEDIUM:** Full-data integration tests may be too slow for the default unit-test suite.
-- **MEDIUM:** Output schema, uniqueness constraints, atomic writes, and overwrite behavior are unspecified.
-- **LOW:** Expected row and column counts should tolerate legitimate exclusions rather than rely only on approximate values.
-
-#### Suggestions
-
-- Separate internal calculation columns, model features, targets, and metadata through explicit allowlists.
-- Ensure current `margin_numeric` and `finish_time_zscore` are never model inputs.
-- Add temporal invariance tests that recompute a historical prefix with and without future data and compare outputs.
-- Validate uniqueness of `horse_race_id`, row counts, dtypes, and categorical columns before writing.
-- Persist categorical vocabularies or define inference-time unknown-category behavior.
-- Put the 311K-row validation in a separate integration-test marker.
-- Write outputs atomically and include generation metadata or schema version.
-
-#### Risk Assessment
-
-**HIGH.** This plan can pass the stated audit while retaining serious temporal leakage, so the verification strategy is not sufficient yet.
-
----
-
-### Final Assessment
-
-**Overall risk: HIGH.**
-
-The plans broadly satisfy DATA-03 at the feature-list level, but they do not yet guarantee leakage-safe ML inputs. Before implementation, the plan set should explicitly resolve:
-
-1. Stable entity identifiers and deterministic race ordering.
-2. Prefix-only or fold-fitted finish-time normalization.
-3. Race-boundary-safe jockey/trainer calculations.
-4. Exact intersection semantics for the 100-rides/one-year window.
-5. Preservation and classification of entries without results.
-6. Explicit model-feature allowlists excluding all current-race result derivatives.
-7. Automated temporal invariance tests rather than sampled value checks alone.
+**HIGH.** Three core correctness problems remain: horse identity collisions, same-race finish-time leakage, and incorrect/non-exact person rolling windows. These can materially contaminate validation results or produce features with different semantics from the documented decisions. The plans should be revised again before execution.
 
 ---
 
@@ -244,49 +92,63 @@ The plans broadly satisfy DATA-03 at the feature-list level, but they do not yet
 
 Review conducted by 1 AI system (Codex). Claude was skipped (same runtime).
 
-### Agreed Strengths
+### Cycle Comparison
+
+| Metric | Cycle 1 | Cycle 2 |
+|--------|---------|---------|
+| Total HIGHs | 7 | 8 (1 resolved + 4 new) |
+| Resolved | 0 | 1 (#6 merge strategy) |
+| Partially Resolved | 0 | 4 (#2, #3, #4, #7) |
+| Unresolved | 7 | 2 (#1, #5) |
+| New HIGHs raised | N/A | 4 |
+
+### Agreed Strengths (Carried Forward + New)
 
 - Comprehensive test coverage planned across all 5 plans (~57 tests total)
 - Clear separation of concerns: each plan handles a distinct feature group
 - Explicit exclusion of popularity/win_odds per D-15
 - Phase 1 audit_leakage() integration planned as final gate
 - Well-structured wave-based execution with proper dependencies
+- LEFT join merge strategy now correctly preserves scratched/removed entries (resolved #6)
 
-### Agreed Concerns (from Codex review)
+### Agreed Concerns (Cycle 2 — Codex)
 
-**HIGH severity (7 unresolved):**
+**HIGH severity (8 concerns: 2 unresolved + 2 partially resolved from cycle 1 + 4 new):**
 
-1. **horse_name entity key instability** — Different horses can share names; formatting changes can split one horse into multiple histories. Lag features may reference wrong past races. (Plan 03-01, 03-03)
-2. **Non-deterministic race ordering** — Sorting by [horse_name, race_date] is ambiguous for same-day races or missing dates. (Plan 03-01, 03-03)
-3. **Global z-score temporal leakage** — Using all-data mean/std for finish_time normalization leaks future distribution into historical rows. (Plan 03-02, 03-05)
-4. **Jockey/trainer same-race leakage risk** — Row-level shift(1) within groupby can leak outcomes from an earlier row in the same race (trainers with multiple runners). (Plan 03-03)
-5. **D-08 "100 rides or 1 year" ambiguity** — "Compute both and select smaller" does not clearly implement the intersection constraint. (Plan 03-03)
-6. **Merge drops resultless entries** — Inner merge with results may remove scratched/removed entries before Plan 03-04 can classify them. (Plan 03-01, 03-04)
-7. **Column-name audit insufficient** — audit_leakage() only checks column names, not temporal leakage from global z-score or same-race rolling stats. Current-row margin_numeric and finish_time_zscore not in EXCLUDE_FROM_FEATURES. (Plan 03-05)
+1. **horse_name entity key still insufficient** — The horse_key = horse_name + first_race_date surrogate uses groupby("horse_name").transform("min"), which assigns the same first date to ALL rows sharing that name. Two same-name horses would get the same key. The data shows zero collisions in 2015-2021, but the defense-in-depth implementation is logically flawed. (UNRESOLVED from cycle 1 #1)
 
-**MEDIUM severity (10 raised):**
+2. **D-08 exact intersection not implemented** — "Choose whichever precomputed stat has fewer observations" is not the same as computing stats over the exact intersection of (within 365 days AND among last 100 valid starts). Need a proper sliding-window or deque implementation. (UNRESOLVED from cycle 1 #5)
 
-- field_size policy for scratched/removed horses undefined
-- Z-score grouping only by course+distance may mix surface types
-- std==0 edge case for sparse course-distance groups
-- Whether DNF/disqualified count in rolling stat denominators unspecified
-- is_debut means "first observed row" not career debut
-- features_pred.parquet semantics unclear (historical rows with no results)
-- Category vocabulary alignment between train/inference unspecified
-- Performance concern with per-row Python operations on 311K rows
-- Output schema uniqueness constraints and atomic writes unspecified
-- Demotion dead-heat official position handling underspecified
+3. **Same-race leakage in finish_time_zscore** — Expanding-window with shift(1) operates row-by-row. Earlier runners in the same race contribute to normalization stats seen by later runners. Must compute at race boundary level: all runners in race N see stats from races 1..N-1 only. (NEW)
+
+4. **Scratched entries consume lag positions** — groupby("horse_key").shift(n) operates on all rows including scratched entries. A scratched horse's row gets a lag position filled with NaN, pushing valid past results to later positions. Lags must filter to valid starts only before shift. (NEW)
+
+5. **Trainer statistics have incorrect rate semantics** — Using `any(top3)`/`any(win)` at race level produces binary outcomes, not proper rate denominators. For 3 runners: 2 top-3 finishes should count as 2/3 rate, not 1/1. Need sum-based aggregation: sum(top3_count)/sum(valid_starts). (NEW)
+
+6. **Resultless rows cannot distinguish scratched from removed** — Left-join preserved entries with no result row get result_status="no_result" in Plan 04, losing the scratched/removed distinction that exists in entry data. Need entry-side status field. (NEW)
+
+7. **Race ordering not globally unique** — (horse_key, race_date, race_number) is not globally unique across courses. Need start_time and race_id as additional tie-breakers. (PARTIALLY RESOLVED from cycle 1 #2)
+
+8. **FEATURE_COLUMNS is a denylist, not an allowlist** — `all columns minus EXCLUDE_FROM_FEATURES` means new columns auto-include. Need a static, explicitly enumerated allowlist. (PARTIALLY RESOLVED from cycle 1 #7)
 
 ### Divergent Views
 
 Single reviewer -- no divergent views to report.
 
-### Planner Action Items
+### Planner Action Items (Priority Order)
 
-1. **Resolve horse_name entity key**: Evaluate whether the standard data contains a horse_id field. If not, document the collision risk and consider a composite key (horse_name + first_race_date). Update Plan 03-01.
-2. **Fix merge strategy**: Change result merge to left join. Preserve scratched/removed rows for Plan 03-04 classification. Update Plan 03-01.
-3. **Address z-score leakage**: Either (a) use expanding-window mean/std per course-distance with shift(1), or (b) accept global stats as a documented known assumption (per RESEARCH.md A2) and add a temporal invariance test. Update Plan 03-02.
-4. **Fix jockey/trainer race-boundary safety**: Compute stats at race level, not row level. A trainer/jockey should see all results from completed prior races, not from an earlier row in the same race. Update Plan 03-03.
-5. **Clarify D-08 constraint**: Define exact semantics: filter prior records to those within 365 days AND among the most recent 100 valid starts. Update Plan 03-03.
-6. **Expand EXCLUDE_FROM_FEATURES**: Add current-row margin_numeric, finish_time_zscore, and finish_time_seconds to the exclusion list. Ensure only lag-derived versions (prev_*_finish_time_zscore, prev_*_margin_numeric) appear in features. Update Plan 03-05.
-7. **Add temporal invariance tests**: Add tests verifying that adding future data does not change historical feature values. Update Plan 03-05.
+1. **Fix horse entity key**: Either (a) verify that the standard data contains a horse_id field and use it, or (b) accept the current horse_key with a documented caveat that 2015-2021 data has zero name collisions (verified by data analysis) and add a runtime assertion checking for key collisions. If collisions exist, the system must fail loudly rather than silently.
+
+2. **Fix finish_time_zscore same-race leakage**: Change the grouping to operate at race level -- compute expanding-window stats per (course_name, distance, surface) using one representative observation per race (e.g., mean finish_time), then assign the same normalization parameters to all runners in that race. This ensures no same-race runner influences another.
+
+3. **Fix lag position corruption by scratched entries**: Before computing shift(n), filter the DataFrame to only valid-start rows (where result_status is not scratched/removed/no_result). Compute lags on this filtered set, then merge back to the full entry DataFrame. Scratched entries get all-NaN lags, which is correct.
+
+4. **Fix trainer stat semantics**: Replace `any(top3)`/`any(win)` with sum-based aggregation: for each person-race, compute sum of top3 finishes and count of valid starts. Rolling rates = rolling_sum(top3_count) / rolling_sum(valid_starts). This produces correct runner-level rates.
+
+5. **Implement D-08 as exact intersection**: Use a two-pointer or deque approach per person: maintain a sorted list of prior valid starts, filter to last 365 days, take the most recent 100, compute stats over exactly those records. This is O(n) per person with sorted data.
+
+6. **Make FEATURE_COLUMNS a true allowlist**: Define it as a static list constructed from named feature groups (RACE_FEATURES, HORSE_FEATURES, LAG_FEATURES, PERSON_FEATURES). Assert at generation time that all expected columns exist and no unexpected columns are present.
+
+7. **Strengthen race ordering key**: Add start_time and race_id as additional sort components for full global uniqueness across courses and meetings.
+
+8. **Resolve result_status for resultless rows**: Check if entry-side data distinguishes scratched from removed. If so, use that field. If not, document "no_result" as a catch-all and note the downstream impact.
