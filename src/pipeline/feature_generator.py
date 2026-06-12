@@ -650,12 +650,14 @@ def compute_debut_flag(df: pd.DataFrame) -> pd.DataFrame:
     - Horse with all 取 entries: is_debut=False for all
 
     Args:
-        df: DataFrame sorted by SORT_KEY with result_status column
+        df: DataFrame with result_status column
             (requires generate_target() called first).
+            Sorted internally by SORT_KEY to ensure correct chronological order.
 
     Returns:
         DataFrame with is_debut and is_valid_start columns added.
     """
+    df = df.sort_values(SORT_KEY).reset_index(drop=True)
     df = df.copy()
 
     # Define valid start: anything except scratched/removed
