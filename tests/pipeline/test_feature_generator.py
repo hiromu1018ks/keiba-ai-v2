@@ -364,14 +364,18 @@ class TestFinishTimeZscore:
     def test_later_race_sees_prior_race_stats(self) -> None:
         """Test 6: Runners in race N+1 see normalization stats that INCLUDE race N's times.
 
-        Race 2's normalization should be based on race 1's finish times.
+        Race 6's normalization should be based on races 1-5's finish times
+        (min_periods=5 met).
         """
-        df = self._make_two_race_fixture()
+        df = self._make_many_race_fixture(num_races=7)
         result = compute_finish_time_zscore(df)
 
-        race2 = result[result["race_id"] == "R2"]
-        zscores = race2["finish_time_zscore"].dropna().values
-        assert len(zscores) > 0, "Race 2 should have non-NaN z-scores (race 1 provides history)"
+        # Race 6 has 5 prior races -> min_periods=5 met -> z-scores should be non-NaN
+        race6 = result[result["race_id"] == "R6"]
+        zscores = race6["finish_time_zscore"].dropna().values
+        assert len(zscores) > 0, (
+            "Race 6 should have non-NaN z-scores (5 prior races, min_periods=5 met)"
+        )
 
     def test_no_same_race_leakage(self) -> None:
         """Test 7: Runners in race N see normalization stats that EXCLUDE race N's own times.

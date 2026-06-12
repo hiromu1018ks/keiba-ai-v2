@@ -156,6 +156,120 @@ def convert_margin_to_numeric(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def parse_finish_time_to_seconds(time_str: str | None) -> float:
+    """Convert finish time string (M:SS.T) to seconds.
+
+    Args:
+        time_str: Finish time in M:SS.T format (e.g. "1:29.5", "0:59.3"),
+            or None/NaN.
+
+    Returns:
+        Time in seconds as float, or np.nan if input is None/NaN or
+        malformed (missing ":").
+    """
+    if time_str is None or (isinstance(time_str, float) and np.isnan(time_str)):
+        return np.nan
+
+    time_str = str(time_str).strip()
+    if ":" not in time_str:
+        return np.nan
+
+    parts = time_str.split(":")
+    if len(parts) != 2:
+        return np.nan
+
+    try:
+        minutes = float(parts[0])
+        seconds = float(parts[1])
+        return minutes * 60 + seconds
+    except (ValueError, IndexError):
+        return np.nan
+
+
+def compute_finish_time_zscore(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute finish_time z-score with race-boundary temporal safety.
+
+    The z-score normalization operates at RACE BOUNDARY level to prevent
+    same-race leakage. Each race's normalization parameters (mean, std)
+    come from all prior races in the same (course_name, distance, surface)
+    group, with no contribution from any runner in the current race.
+
+    Algorithm:
+    1. Parse finish_time to seconds for each runner.
+    2. Aggregate to race-level means (one row per race).
+    3. Within each (course, distance, surface) group, compute expanding
+       mean/std with shift(1) on the race-level series.
+       shift(1) at race level skips the current RACE, not just the current row.
+    4. Join normalization parameters back to every runner in that race.
+       ALL runners in the same race get identical norm_mean and norm_std.
+    5. Compute z-score: (finish_time_seconds - norm_mean) / norm_std.
+    6. When std is NaN or 0, z-score is NaN (not inf).
+    7. Groups with fewer than 5 prior races produce NaN z-score.
+
+    This guarantees:
+    - No runner from race N influences normalization stats for any runner in race N.
+    - Adding future races to the dataset does NOT change z-scores for historical rows.
+    - All runners in the same race receive identical normalization parameters.
+
+    Args:
+        df: DataFrame with columns: finish_time, race_id, race_date,
+            course_name, distance, surface.
+
+    Returns:
+        DataFrame with finish_time_seconds and finish_time_zscore columns added.
+        Intermediate columns (norm_mean, norm_std) are dropped.
+    """
+    df = df.copy()
+
+    # Step 1: Parse finish_time to seconds
+    df["finish_time_seconds"] = df["finish_time"].apply(parse_finish_time_to_seconds)
+
+    # Step 2: Aggregate to race-level means
+    race_means = (
+        df.groupby("race_id")
+        .agg(
+            race_ft_mean=("finish_time_seconds", "mean"),
+            race_date=("race_date", "first"),
+            course_name=("course_name", "first"),
+            distance=("distance", "first"),
+            surface=("surface", "first"),
+        )
+        .reset_index()
+    )
+
+    # Step 3: Compute expanding-window stats on the race-level series
+    race_means = race_means.sort_values(
+        ["course_name", "distance", "surface", "race_date"]
+    ).reset_index(drop=True)
+
+    grp = race_means.groupby(["course_name", "distance", "surface"])
+    race_means["norm_mean"] = (
+        grp["race_ft_mean"].expanding(min_periods=5).mean().shift(1).values
+    )
+    race_means["norm_std"] = (
+        grp["race_ft_mean"].expanding(min_periods=5).std().shift(1).values
+    )
+
+    # Step 4: Join normalization parameters back to entry-level DataFrame
+    df = df.merge(
+        race_means[["race_id", "norm_mean", "norm_std"]],
+        on="race_id",
+        how="left",
+    )
+
+    # Step 5: Compute z-score
+    mask = df["norm_std"].notna() & (df["norm_std"] > 0)
+    df["finish_time_zscore"] = np.nan
+    df.loc[mask, "finish_time_zscore"] = (
+        df.loc[mask, "finish_time_seconds"] - df.loc[mask, "norm_mean"]
+    ) / df.loc[mask, "norm_std"]
+
+    # Step 6: Clean up intermediate columns
+    df = df.drop(columns=["norm_mean", "norm_std"])
+
+    return df
+
+
 def derive_horse_entity_key(df: pd.DataFrame) -> pd.DataFrame:
     """Derive a collision-safe horse entity key from horse_name and birth_year_proxy.
 
@@ -375,8 +489,11 @@ def generate(
     df = convert_margin_to_numeric(df)
     logger.info("Margin numeric conversion complete")
 
-    # Steps 5-10: Placeholders for Plans 02-05
-    # Plan 03-02: finish_time z-score normalization
+    # Step 5: Finish time z-score normalization (Plan 03-02)
+    df = compute_finish_time_zscore(df)
+    logger.info("Finish time z-score normalization complete")
+
+    # Steps 6-10: Placeholders for Plans 02-05
     # Plan 03-03: lag features for recent runs (3-race, 5-race)
     # Plan 03-02: jockey/trainer rolling statistics
     # Plan 03-03: debut flag for first-time starters
