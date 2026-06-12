@@ -526,8 +526,59 @@ def compute_jockey_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def generate_target(df: pd.DataFrame) -> pd.DataFrame:
-    """Stub for Plan 03-04."""
-    raise NotImplementedError("generate_target not yet implemented (Plan 03-04)")
+    """Generate target variable and auxiliary columns for Model A training.
+
+    Creates four columns from finish_position and finish_note:
+    - target_top3 (Int64): 1 for finish_position 1-3, 0 otherwise (per D-12)
+    - result_status (str): one of {finished, dnf, disqualified, scratched,
+      removed, demoted} based on finish_note (per D-14)
+    - is_dnf (bool): True for dnf and disqualified statuses
+    - exclude_from_training (bool): True for scratched and removed (per D-13)
+
+    Implementation note: every entry has a result row (1:1 relationship confirmed
+    at 311,806 rows). finish_note distinguishes all non-finish categories:
+    取 (scratched, 520), 除 (removed, 604), 中 (DNF, 966),
+    降 (demoted, 18), 失 (disqualified, 1).
+
+    Args:
+        df: DataFrame with finish_position and finish_note columns.
+
+    Returns:
+        DataFrame with target_top3, result_status, is_dnf, exclude_from_training
+        columns added.
+    """
+    df = df.copy()
+
+    # Step 1: Create result_status from finish_note
+    # Check finish_note first (specific notes), then default to "finished"
+    conditions = [
+        df["finish_note"] == "中",
+        df["finish_note"] == "失",
+        df["finish_note"] == "取",
+        df["finish_note"] == "除",
+        df["finish_note"] == "降",
+    ]
+    choices = ["dnf", "disqualified", "scratched", "removed", "demoted"]
+    default = "finished"
+
+    df["result_status"] = np.select(conditions, choices, default=default)
+
+    # Step 2: Create is_dnf column (True for dnf/disqualified)
+    df["is_dnf"] = df["result_status"].isin(["dnf", "disqualified"]).astype(bool)
+
+    # Step 3: Create target_top3 (Int64 nullable)
+    # finish_position <= 3 and not NaN -> 1
+    # finish_position > 3 or NaN -> 0
+    # Note: 降 (demoted) keeps finish_position per D-12
+    is_top3 = df["finish_position"].notna() & (df["finish_position"] <= 3)
+    df["target_top3"] = is_top3.astype("Int64")
+    # Ensure NaN positions get 0
+    df.loc[df["finish_position"].isna(), "target_top3"] = pd.array([0], dtype="Int64")[0]
+
+    # Step 4: Create exclude_from_training (True for scratched/removed only, per D-13)
+    df["exclude_from_training"] = df["result_status"].isin(["scratched", "removed"]).astype(bool)
+
+    return df
 
 
 def compute_debut_flag(df: pd.DataFrame) -> pd.DataFrame:
@@ -766,9 +817,12 @@ def generate(
     df = compute_jockey_trainer_stats(df)
     logger.info("Jockey/trainer rolling statistics complete")
 
-    # Steps 8-10: Placeholders for Plans 03-03 to 03-05
-    # Plan 03-03: debut flag for first-time starters
-    # Plan 03-04: target_top3 generation
+    # Step 8: Target variable generation (Plan 03-04)
+    df = generate_target(df)
+    logger.info("Target variable generation complete")
+
+    # Steps 9-10: Placeholders for Plans 03-04 to 03-05
+    # Plan 03-04: debut flag for first-time starters
     # Plan 03-05: categorical CategoricalDtype conversion
 
     # Step 11: Parquet writing (Plan 03-05)

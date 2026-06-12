@@ -790,8 +790,8 @@ class TestTargetVariable:
         row = result.iloc[4]
         assert row["target_top3"] == 0
         assert row["result_status"] == "dnf"
-        assert row["is_dnf"] is True
-        assert row["exclude_from_training"] is False
+        assert row["is_dnf"] == True  # noqa: E712
+        assert row["exclude_from_training"] == False  # noqa: E712
 
     def test_scratched_tori_note(self) -> None:
         """Test 6: finish_note '取' (scratched) -> target_top3=0, result_status='scratched', exclude=True."""
@@ -800,7 +800,7 @@ class TestTargetVariable:
         row = result.iloc[5]
         assert row["target_top3"] == 0
         assert row["result_status"] == "scratched"
-        assert row["exclude_from_training"] is True
+        assert row["exclude_from_training"] == True  # noqa: E712
 
     def test_removed_jo_note(self) -> None:
         """Test 7: finish_note '除' (removed) -> target_top3=0, result_status='removed', exclude=True."""
@@ -809,7 +809,7 @@ class TestTargetVariable:
         row = result.iloc[6]
         assert row["target_top3"] == 0
         assert row["result_status"] == "removed"
-        assert row["exclude_from_training"] is True
+        assert row["exclude_from_training"] == True  # noqa: E712
 
     def test_disqualified_shitsu_note(self) -> None:
         """Test 8: finish_note '失' (disqualified) -> target_top3=0, result_status='disqualified', is_dnf=True, exclude=False."""
@@ -818,8 +818,8 @@ class TestTargetVariable:
         row = result.iloc[7]
         assert row["target_top3"] == 0
         assert row["result_status"] == "disqualified"
-        assert row["is_dnf"] is True
-        assert row["exclude_from_training"] is False
+        assert row["is_dnf"] == True  # noqa: E712
+        assert row["exclude_from_training"] == False  # noqa: E712
 
     def test_demoted_kou_note_keeps_position(self) -> None:
         """Test 9: finish_note '降' (demoted) keeps finish_position, target_top3 based on position."""
@@ -835,8 +835,8 @@ class TestTargetVariable:
         result = generate_target(df)
         row = result.iloc[9]  # pos=5, note=None
         assert row["result_status"] == "finished"
-        assert row["is_dnf"] is False
-        assert row["exclude_from_training"] is False
+        assert row["is_dnf"] == False  # noqa: E712
+        assert row["exclude_from_training"] == False  # noqa: E712
 
     def test_scratched_vs_removed_distinct_status(self) -> None:
         """Test 11: finish_note '取' and '除' produce DIFFERENT result_status values."""
