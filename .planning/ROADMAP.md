@@ -110,7 +110,7 @@ Plans:
 
 **Wave 3** *(blocked on 03-02)*
 
-- [ ] 03-03: Valid-start-filtered lag features (45 cols) + sum-based race-level jockey/trainer stats with exact D-08 intersection (DATA-03)
+- [x] 03-03: Valid-start-filtered lag features (45 cols) + sum-based race-level jockey/trainer stats with exact D-08 intersection (DATA-03)
 
 **Wave 4** *(blocked on 03-03)*
 
@@ -264,7 +264,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
-| 3. Feature Engineering | 2/5 | In Progress|  |
+| 3. Feature Engineering | 3/5 | In Progress|  |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
