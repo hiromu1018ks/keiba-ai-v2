@@ -138,14 +138,6 @@ MARGIN_MAP: dict[str, float] = {
     "同着": 0.0,       # dead heat
 }
 
-# Compound margin components: used for parsing "1.1/4+クビ" style values
-# These are the additive parts that appear after "+"
-COMPONENT_MAP: dict[str, float] = {
-    "ハナ": 0.02,
-    "クビ": 0.10,
-    "1/2": 0.50,
-}
-
 
 def parse_margin(margin_str: str | None) -> float | None:
     """Convert margin text to numeric value in 馬身 (horse length) units.
@@ -183,8 +175,6 @@ def parse_margin(margin_str: str | None) -> float | None:
             part = part.strip()
             if part in MARGIN_MAP:
                 total += MARGIN_MAP[part]
-            elif part in COMPONENT_MAP:
-                total += COMPONENT_MAP[part]
             else:
                 return None  # Unknown component -> graceful degradation
         return total

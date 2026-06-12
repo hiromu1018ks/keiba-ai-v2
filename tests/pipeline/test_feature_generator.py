@@ -889,7 +889,7 @@ class TestMarginConversion:
         assert parse_margin(None) is None
 
     def test_parse_margin_compound_both_component_map(self) -> None:
-        """Test 9: parse_margin("1/2+1/2") returns 1.0 (compound both in COMPONENT_MAP)."""
+        """Test 9: parse_margin("1/2+1/2") returns 1.0 (compound both in MARGIN_MAP)."""
         assert parse_margin("1/2+1/2") == pytest.approx(1.0)
 
     def test_parse_margin_empty_string(self) -> None:
