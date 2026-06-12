@@ -98,21 +98,21 @@ Plans:
   3. Categorical columns use pandas CategoricalDtype for native LightGBM integration
   4. Feature output passes the Phase 1 audit function (zero post-race columns detected)
 
-**Plans**: 5 plans (revised with review feedback)
+**Plans**: 5 plans (Cycle 3 revision -- root cause fixes for all 8 HIGH review concerns)
 Plans:
 **Wave 1** (parallel)
 
-- [ ] 03-01: Module skeleton + stable horse_key + left-join merge + race context + horse basic features (DATA-03)
-- [ ] 03-02: Margin conversion + expanding-window finish_time z-score (DATA-03)
+- [ ] 03-01: Module skeleton + collision-safe horse_entity_key + inner-join merge + race context + horse basic features (DATA-03)
+- [ ] 03-02: Margin conversion + race-boundary finish_time z-score (DATA-03)
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-03: Lag features via horse_key (45 cols) + race-level jockey/trainer stats with exact D-08 constraint (DATA-03)
-- [ ] 03-04: Target variable + debut flag (valid starts only) + auxiliary columns (DATA-03)
+- [ ] 03-03: Valid-start-filtered lag features (45 cols) + sum-based race-level jockey/trainer stats with exact D-08 intersection (DATA-03)
+- [ ] 03-04: Target variable (6 result_status categories) + debut flag (DATA-03)
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 03-05: Explicit feature allowlist + categorical conversion + temporal invariance tests + leakage audit + Parquet output (DATA-03)
+- [ ] 03-05: Static feature allowlist + categorical conversion + temporal invariance tests + leakage audit + Parquet output (DATA-03)
 
 ### Phase 4: Scraping Infrastructure & Race Data
 
