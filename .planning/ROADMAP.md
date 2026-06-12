@@ -69,7 +69,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. Kaggle CSV files are read and converted to standard-layer Parquet with correct schema conformance (validated by Pydantic or schema checks)
-  2. The 2015-2021 date range is correctly filtered from the full Kaggle dataset (1986-2021), and output is single-file Parquet per table (per D-07)
+  2. The 2015-20121 date range is correctly filtered from the full Kaggle dataset (1986-2021), and output is single-file Parquet per table (per D-07)
   3. Row counts and key distributions in the output Parquet match expectations from the source CSV (no silent data loss)
 
 **Plans**: 3 plans
@@ -93,18 +93,26 @@ Plans:
 **Requirements**: DATA-03
 **Success Criteria** (what must be TRUE):
 
-  1. Feature layer generates all specified features: race context (course, distance, surface, condition, field size, post position), horse identifiers, jockey/trainer categorical features, popularity/win odds, recent form (past performance metrics), last-3F time, and running position
+  1. Feature layer generates all specified features: race context (course, distance, surface, condition, field size, post position), horse identifiers, jockey/trainer categorical features, recent form (past performance metrics), last-3F time, and running position. Note: popularity/win odds are excluded per D-15 (post-race) -- ROADMAP criterion #1 lists them but CONTEXT.md D-15 takes precedence.
   2. All rolling/lag features use temporal shift (`.shift(1)`) so no future information leaks into any row
   3. Categorical columns use pandas CategoricalDtype for native LightGBM integration
   4. Feature output passes the Phase 1 audit function (zero post-race columns detected)
 
-**Plans**: TBD
-
+**Plans**: 5 plans
 Plans:
+**Wave 1** (parallel)
 
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01: Module skeleton + load/merge + race context + horse basic features (DATA-03)
+- [ ] 03-02: Margin conversion + finish_time z-score normalization (DATA-03)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-03: Lag features (45 columns) + jockey/trainer rolling stats (DATA-03)
+- [ ] 03-04: Target variable + debut flag + auxiliary columns (DATA-03)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 03-05: Categorical conversion + leakage audit + Parquet output + real data validation (DATA-03)
 
 ### Phase 4: Scraping Infrastructure & Race Data
 
@@ -250,7 +258,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
-| 3. Feature Engineering | 0/? | Not started | - |
+| 3. Feature Engineering | 0/5 | Not started | - |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
