@@ -1206,10 +1206,125 @@ class TestCategoricalConversion:
 
 
 class TestDebutFlag:
-    """Tests for debut flag for first-time starters (Plan 03-03)."""
+    """Tests for debut flag (is_debut) excluding 取/除 from history count (Plan 03-04)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Debut flag not yet implemented (Plan 03-03)")
+    @staticmethod
+    def _make_debut_df() -> pd.DataFrame:
+        """Create a fixture for debut flag testing.
+
+        Horses:
+        - 馬A_2010: 3 valid starts (pos 1, 2, 3) -- debut at first entry
+        - 馬B_2011: scratched(取), valid(pos=5), valid(pos=3), valid(pos=1) -- debut at second entry
+        - 馬C_2012: 2 valid starts -- debut at first entry
+        - 馬D_2013: 取, 取 -- all scratched, no valid start, is_debut=False for all
+        """
+        return pd.DataFrame({
+            "horse_entity_key": [
+                "馬A_2010", "馬A_2010", "馬A_2010",
+                "馬B_2011", "馬B_2011", "馬B_2011", "馬B_2011",
+                "馬C_2012", "馬C_2012",
+                "馬D_2013", "馬D_2013",
+            ],
+            "race_id": [
+                "R1", "R2", "R3",
+                "R4", "R5", "R6", "R7",
+                "R8", "R9",
+                "R10", "R11",
+            ],
+            "race_date": pd.to_datetime([
+                "2015-01-01", "2015-02-01", "2015-03-01",
+                "2015-01-01", "2015-02-01", "2015-03-01", "2015-04-01",
+                "2015-01-01", "2015-02-01",
+                "2015-01-01", "2015-02-01",
+            ]),
+            "finish_position": [
+                1, 2, 3,
+                None, 5, 3, 1,
+                2, 4,
+                None, None,
+            ],
+            "finish_note": [
+                None, None, None,
+                "取", None, None, None,
+                None, None,
+                "取", "取",
+            ],
+            "result_status": [
+                "finished", "finished", "finished",
+                "scratched", "finished", "finished", "finished",
+                "finished", "finished",
+                "scratched", "scratched",
+            ],
+        })
+
+    def test_debut_true_for_first_valid_start(self) -> None:
+        """Test 1: is_debut is True for a horse's first valid start."""
+        df = self._make_debut_df()
+        result = compute_debut_flag(df)
+        # 馬A_2010: first valid start at R1 -> is_debut=True
+        horse_a_r1 = result[(result["horse_entity_key"] == "馬A_2010") & (result["race_id"] == "R1")]
+        assert len(horse_a_r1) == 1
+        assert horse_a_r1.iloc[0]["is_debut"] == True  # noqa: E712
+
+    def test_debut_false_for_subsequent_starts(self) -> None:
+        """Test 2: is_debut is False for a horse's second or later valid start."""
+        df = self._make_debut_df()
+        result = compute_debut_flag(df)
+        # 馬A_2010: second valid start at R2 -> is_debut=False
+        horse_a_r2 = result[(result["horse_entity_key"] == "馬A_2010") & (result["race_id"] == "R2")]
+        assert len(horse_a_r2) == 1
+        assert horse_a_r2.iloc[0]["is_debut"] == False  # noqa: E712
+
+    def test_scratched_first_entry_debut_at_next_valid(self) -> None:
+        """Test 3: A horse whose first entry was 取 has is_debut=False for that entry, is_debut=True for next valid start."""
+        df = self._make_debut_df()
+        result = compute_debut_flag(df)
+
+        # 馬B_2011: first entry at R4 is 取 -> is_debut=False
+        horse_b_r4 = result[(result["horse_entity_key"] == "馬B_2011") & (result["race_id"] == "R4")]
+        assert len(horse_b_r4) == 1
+        assert horse_b_r4.iloc[0]["is_debut"] == False  # noqa: E712
+
+        # 馬B_2011: second entry at R5 is first valid start -> is_debut=True
+        horse_b_r5 = result[(result["horse_entity_key"] == "馬B_2011") & (result["race_id"] == "R5")]
+        assert len(horse_b_r5) == 1
+        assert horse_b_r5.iloc[0]["is_debut"] == True  # noqa: E712
+
+    def test_debut_correlates_with_nan_lag_features(self) -> None:
+        """Test 4: is_debut=True correlates with prev_1_finish_position being NaN (no prior history)."""
+        df = self._make_debut_df()
+        # Add prev_1_finish_position to simulate lag features
+        df["prev_1_finish_position"] = [None, 1.0, 2.0, None, None, 5.0, 3.0, None, 2.0, None, None]
+        result = compute_debut_flag(df)
+
+        # All debut entries should have NaN prev_1_finish_position
+        debut_rows = result[result["is_debut"] == True]  # noqa: E712
+        for _, row in debut_rows.iterrows():
+            assert pd.isna(row["prev_1_finish_position"]), (
+                f"Debut horse at race {row['race_id']} should have NaN prev_1_finish_position"
+            )
+
+    def test_independent_tracking_per_entity_key(self) -> None:
+        """Test 5: Different horse entities each get independent debut tracking."""
+        df = self._make_debut_df()
+        result = compute_debut_flag(df)
+
+        # 馬A_2010 and 馬C_2012 each have is_debut=True at their first valid starts
+        horse_a_r1 = result[(result["horse_entity_key"] == "馬A_2010") & (result["race_id"] == "R1")]
+        horse_c_r8 = result[(result["horse_entity_key"] == "馬C_2012") & (result["race_id"] == "R8")]
+        assert horse_a_r1.iloc[0]["is_debut"] == True  # noqa: E712
+        assert horse_c_r8.iloc[0]["is_debut"] == True  # noqa: E712
+
+    def test_all_scratched_horse_debut_false(self) -> None:
+        """Test 6: A horse with only 取 entries has is_debut=False for all entries."""
+        df = self._make_debut_df()
+        result = compute_debut_flag(df)
+
+        # 馬D_2013: all entries are 取 -> is_debut=False for all
+        horse_d = result[result["horse_entity_key"] == "馬D_2013"]
+        assert len(horse_d) == 2
+        for _, row in horse_d.iterrows():
+            assert row["is_debut"] == False  # noqa: E712
 
 
 class TestLeakageAudit:
