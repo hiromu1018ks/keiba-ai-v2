@@ -17,10 +17,12 @@ from src.pipeline.feature_generator import (
     compute_finish_time_zscore,
     compute_jockey_trainer_stats,
     compute_lag_features,
+    compute_debut_flag,
     convert_margin_to_numeric,
     derive_horse_entity_key,
     extract_horse_basic_features,
     extract_race_context_features,
+    generate_target,
     parse_finish_time_to_seconds,
     parse_margin,
 )
@@ -733,10 +735,120 @@ class TestJockeyTrainerStats:
 
 
 class TestTargetVariable:
-    """Tests for target_top3 generation (Plan 03-04)."""
+    """Tests for target_top3 generation, result_status, is_dnf, exclude_from_training (Plan 03-04)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Target variable not yet implemented (Plan 03-04)")
+    @staticmethod
+    def _make_target_df() -> pd.DataFrame:
+        """Create a fixture covering all finish_note categories.
+
+        Rows:
+        1. pos=1, note=None  -> top3=1, status=finished
+        2. pos=2, note=None  -> top3=1, status=finished
+        3. pos=3, note=None  -> top3=1, status=finished
+        4. pos=4, note=None  -> top3=0, status=finished
+        5. pos=None, note=中 -> top3=0, status=dnf, is_dnf=True, exclude=False
+        6. pos=None, note=取 -> top3=0, status=scratched, exclude=True
+        7. pos=None, note=除 -> top3=0, status=removed, exclude=True
+        8. pos=None, note=失 -> top3=0, status=disqualified, is_dnf=True, exclude=False
+        9. pos=2, note=降    -> top3=1 (keeps pos=2), status=demoted
+        10. pos=5, note=None  -> top3=0, status=finished
+        """
+        return pd.DataFrame({
+            "horse_entity_key": [f"馬{i}" for i in range(10)],
+            "finish_position": [1, 2, 3, 4, None, None, None, None, 2, 5],
+            "finish_note": [None, None, None, None, "中", "取", "除", "失", "降", None],
+        })
+
+    def test_position_1_target_top3(self) -> None:
+        """Test 1: finish_position 1 -> target_top3 = 1."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        assert result.iloc[0]["target_top3"] == 1
+
+    def test_position_2_target_top3(self) -> None:
+        """Test 2: finish_position 2 -> target_top3 = 1."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        assert result.iloc[1]["target_top3"] == 1
+
+    def test_position_3_target_top3(self) -> None:
+        """Test 3: finish_position 3 -> target_top3 = 1."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        assert result.iloc[2]["target_top3"] == 1
+
+    def test_position_4_target_top3(self) -> None:
+        """Test 4: finish_position 4 -> target_top3 = 0."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        assert result.iloc[3]["target_top3"] == 0
+
+    def test_dnf_middle_note(self) -> None:
+        """Test 5: finish_note '中' (DNF) -> target_top3=0, result_status='dnf', is_dnf=True, exclude=False."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        row = result.iloc[4]
+        assert row["target_top3"] == 0
+        assert row["result_status"] == "dnf"
+        assert row["is_dnf"] is True
+        assert row["exclude_from_training"] is False
+
+    def test_scratched_tori_note(self) -> None:
+        """Test 6: finish_note '取' (scratched) -> target_top3=0, result_status='scratched', exclude=True."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        row = result.iloc[5]
+        assert row["target_top3"] == 0
+        assert row["result_status"] == "scratched"
+        assert row["exclude_from_training"] is True
+
+    def test_removed_jo_note(self) -> None:
+        """Test 7: finish_note '除' (removed) -> target_top3=0, result_status='removed', exclude=True."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        row = result.iloc[6]
+        assert row["target_top3"] == 0
+        assert row["result_status"] == "removed"
+        assert row["exclude_from_training"] is True
+
+    def test_disqualified_shitsu_note(self) -> None:
+        """Test 8: finish_note '失' (disqualified) -> target_top3=0, result_status='disqualified', is_dnf=True, exclude=False."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        row = result.iloc[7]
+        assert row["target_top3"] == 0
+        assert row["result_status"] == "disqualified"
+        assert row["is_dnf"] is True
+        assert row["exclude_from_training"] is False
+
+    def test_demoted_kou_note_keeps_position(self) -> None:
+        """Test 9: finish_note '降' (demoted) keeps finish_position, target_top3 based on position."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        row = result.iloc[8]
+        assert row["target_top3"] == 1  # position 2 is top-3
+        assert row["result_status"] == "demoted"
+
+    def test_normal_finish_result_status(self) -> None:
+        """Test 10: Normal finish (no note) -> result_status='finished', is_dnf=False."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        row = result.iloc[9]  # pos=5, note=None
+        assert row["result_status"] == "finished"
+        assert row["is_dnf"] is False
+        assert row["exclude_from_training"] is False
+
+    def test_scratched_vs_removed_distinct_status(self) -> None:
+        """Test 11: finish_note '取' and '除' produce DIFFERENT result_status values."""
+        df = self._make_target_df()
+        result = generate_target(df)
+        scratched_status = result.iloc[5]["result_status"]
+        removed_status = result.iloc[6]["result_status"]
+        assert scratched_status == "scratched"
+        assert removed_status == "removed"
+        assert scratched_status != removed_status, (
+            "取 (scratched) and 除 (removed) must have distinct result_status values"
+        )
 
 
 class TestMarginConversion:

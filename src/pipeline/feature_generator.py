@@ -525,6 +525,16 @@ def compute_jockey_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def generate_target(df: pd.DataFrame) -> pd.DataFrame:
+    """Stub for Plan 03-04."""
+    raise NotImplementedError("generate_target not yet implemented (Plan 03-04)")
+
+
+def compute_debut_flag(df: pd.DataFrame) -> pd.DataFrame:
+    """Stub for Plan 03-04."""
+    raise NotImplementedError("compute_debut_flag not yet implemented (Plan 03-04)")
+
+
 def derive_horse_entity_key(df: pd.DataFrame) -> pd.DataFrame:
     """Derive a collision-safe horse entity key from horse_name and birth_year_proxy.
 
