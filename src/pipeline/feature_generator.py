@@ -582,8 +582,48 @@ def generate_target(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_debut_flag(df: pd.DataFrame) -> pd.DataFrame:
-    """Stub for Plan 03-04."""
-    raise NotImplementedError("compute_debut_flag not yet implemented (Plan 03-04)")
+    """Compute debut flag (is_debut) identifying first valid start per horse.
+
+    A horse's "debut" is their first VALID start, where valid start means
+    result_status is NOT in ["scratched", "removed"]. 取 (scratched) and
+    除 (removed) entries do not consume the debut position.
+
+    This must be called after generate_target() which creates result_status.
+
+    Implementation:
+    1. Define is_valid_start: result_status NOT in ["scratched", "removed"]
+    2. For each horse_entity_key, count cumulative valid starts BEFORE current row
+    3. is_debut = (valid_before == 0) AND is_valid_start
+
+    This correctly handles:
+    - Horse whose first entry is 取: is_valid_start=False, is_debut=False
+    - Same horse's second entry (first valid start): is_debut=True
+    - Horse with all 取 entries: is_debut=False for all
+
+    Args:
+        df: DataFrame sorted by SORT_KEY with result_status column
+            (requires generate_target() called first).
+
+    Returns:
+        DataFrame with is_debut and is_valid_start columns added.
+    """
+    df = df.copy()
+
+    # Define valid start: anything except scratched/removed
+    df["is_valid_start"] = ~df["result_status"].isin(["scratched", "removed"])
+
+    # For each horse, count cumulative valid starts BEFORE current row
+    # cumsum() includes current row, so subtract current row's contribution
+    valid_before = (
+        df.groupby("horse_entity_key")["is_valid_start"]
+        .cumsum()
+        - df["is_valid_start"].astype(int)
+    )
+
+    # is_debut: first valid start for this horse
+    df["is_debut"] = (valid_before == 0) & df["is_valid_start"]
+
+    return df
 
 
 def derive_horse_entity_key(df: pd.DataFrame) -> pd.DataFrame:
@@ -821,8 +861,11 @@ def generate(
     df = generate_target(df)
     logger.info("Target variable generation complete")
 
-    # Steps 9-10: Placeholders for Plans 03-04 to 03-05
-    # Plan 03-04: debut flag for first-time starters
+    # Step 9: Debut flag for first-time starters (Plan 03-04)
+    df = compute_debut_flag(df)
+    logger.info("Debut flag computation complete")
+
+    # Steps 10: Placeholders for Plan 03-05
     # Plan 03-05: categorical CategoricalDtype conversion
 
     # Step 11: Parquet writing (Plan 03-05)
