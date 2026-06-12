@@ -369,6 +369,162 @@ def compute_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     return df_indexed
 
 
+def _compute_person_stats(
+    df: pd.DataFrame, person_col: str, prefix: str
+) -> pd.DataFrame:
+    """Compute rolling stats for a person (jockey or trainer) with exact D-08 intersection.
+
+    Implements sum-based race-level aggregation: for each (person, race_id),
+    counts top-3 finishes, wins, and valid starts across all runners.
+    Then computes rolling rates using only prior valid starts that satisfy
+    BOTH:
+    - Within 365 days of current race date
+    - Among the most recent 100 prior valid starts
+
+    Args:
+        df: DataFrame with person_col, race_id, race_date, finish_position,
+            finish_note columns.
+        person_col: Column name for the person ('jockey' or 'trainer').
+        prefix: Prefix for output columns ('jockey_rolling_' or 'trainer_rolling_').
+
+    Returns:
+        DataFrame with columns: person_col, race_id, {prefix}top3_rate,
+        {prefix}win_rate, {prefix}rides. One row per (person, race_id).
+    """
+    # Step 1: Create entry-level boolean columns
+    is_top3 = df["finish_position"].notna() & (df["finish_position"] <= 3)
+    is_win = df["finish_position"].notna() & (df["finish_position"] == 1)
+    is_valid_start = ~df["finish_note"].isin(["取", "除"])
+
+    work = df.copy()
+    work["_is_top3"] = is_top3.astype(float)
+    work["_is_win"] = is_win.astype(float)
+    work["_is_valid_start"] = is_valid_start.astype(float)
+
+    # Step 2: Aggregate to person-race level
+    person_race = (
+        work.groupby([person_col, "race_id"])
+        .agg(
+            top3_count=("_is_top3", "sum"),
+            win_count=("_is_win", "sum"),
+            valid_start_count=("_is_valid_start", "sum"),
+            race_date=("race_date", "first"),
+        )
+        .reset_index()
+    )
+
+    # Ensure race_date is datetime for comparison
+    person_race["race_date"] = pd.to_datetime(person_race["race_date"])
+
+    # Sort chronologically per person
+    person_race = person_race.sort_values(
+        [person_col, "race_date", "race_id"]
+    ).reset_index(drop=True)
+
+    # Step 3: For each person, compute rolling stats with exact D-08 intersection
+    results: list[dict] = []
+
+    for person, group in person_race.groupby(person_col):
+        group = group.reset_index(drop=True)
+        n = len(group)
+
+        # Pre-extract arrays for performance
+        dates = group["race_date"].values
+        top3s = group["top3_count"].values
+        wins = group["win_count"].values
+        valids = group["valid_start_count"].values
+        race_ids = group["race_id"].values
+
+        # Maintain a list of prior valid-start indices (as person-race rows)
+        # Each entry: (race_date, top3_count, win_count, valid_start_count)
+        prior_starts: list[tuple] = []
+
+        for i in range(n):
+            current_date = dates[i]
+
+            # Filter prior_starts to D-08 exact intersection:
+            # Keep only those within 365 days AND among most recent 100
+            # First: remove entries older than 365 days
+            cutoff_date = current_date - pd.Timedelta(days=365)
+            prior_starts = [
+                (d, t, w, v)
+                for d, t, w, v in prior_starts
+                if d >= cutoff_date
+            ]
+            # Then: keep at most the most recent 100 (they're already sorted by date)
+            prior_starts = prior_starts[-100:]
+
+            # Compute stats over the filtered set
+            if prior_starts and sum(v for _, _, _, v in prior_starts) > 0:
+                total_top3 = sum(t for _, t, _, _ in prior_starts)
+                total_win = sum(w for _, _, w, _ in prior_starts)
+                total_valid = sum(v for _, _, _, v in prior_starts)
+
+                top3_rate = total_top3 / total_valid if total_valid > 0 else np.nan
+                win_rate = total_win / total_valid if total_valid > 0 else np.nan
+                rides = float(total_valid)
+            else:
+                top3_rate = np.nan
+                win_rate = np.nan
+                rides = 0.0
+
+            results.append({
+                person_col: person,
+                "race_id": race_ids[i],
+                f"{prefix}top3_rate": top3_rate,
+                f"{prefix}win_rate": win_rate,
+                f"{prefix}rides": rides,
+            })
+
+            # Add current race to prior_starts for next iteration (if it had valid starts)
+            if valids[i] > 0:
+                prior_starts.append(
+                    (dates[i], top3s[i], wins[i], valids[i])
+                )
+
+    return pd.DataFrame(results)
+
+
+def compute_jockey_trainer_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute jockey and trainer rolling statistics.
+
+    Generates 6 rolling stat columns with sum-based race-level aggregation
+    and exact D-08 intersection (both 365-day AND 100-start constraints
+    applied simultaneously).
+
+    Columns produced:
+    - jockey_rolling_top3_rate, jockey_rolling_win_rate, jockey_rolling_rides
+    - trainer_rolling_top3_rate, trainer_rolling_win_rate, trainer_rolling_rides
+
+    Key design:
+    - Sum-based aggregation: trainer with 2 top-3 from 3 runners gets
+      top3_rate=2/3, not 1.0 (any-based would give 1.0).
+    - Race-level: all runners of same person in same race get identical stats.
+    - Temporal safety: current race results do not influence current stats
+      (prior_starts appended AFTER computing stats for current row).
+    - D-08 exact intersection: stats computed over prior valid starts that
+      satisfy BOTH (within 365 days AND among most recent 100).
+
+    Args:
+        df: DataFrame with columns: jockey, trainer, race_id, race_date,
+            finish_position, finish_note.
+
+    Returns:
+        DataFrame with 6 rolling stat columns added.
+    """
+    df = df.copy()
+
+    # Compute jockey stats
+    jockey_stats = _compute_person_stats(df, "jockey", "jockey_rolling_")
+    df = df.merge(jockey_stats, on=["jockey", "race_id"], how="left")
+
+    # Compute trainer stats
+    trainer_stats = _compute_person_stats(df, "trainer", "trainer_rolling_")
+    df = df.merge(trainer_stats, on=["trainer", "race_id"], how="left")
+
+    return df
+
+
 def derive_horse_entity_key(df: pd.DataFrame) -> pd.DataFrame:
     """Derive a collision-safe horse entity key from horse_name and birth_year_proxy.
 
@@ -596,8 +752,11 @@ def generate(
     df = compute_lag_features(df)
     logger.info("Lag feature computation complete")
 
-    # Steps 7-10: Placeholders for Plans 03-03 to 03-05
-    # Plan 03-03: jockey/trainer rolling statistics
+    # Step 7: Jockey/trainer rolling statistics (Plan 03-03)
+    df = compute_jockey_trainer_stats(df)
+    logger.info("Jockey/trainer rolling statistics complete")
+
+    # Steps 8-10: Placeholders for Plans 03-03 to 03-05
     # Plan 03-03: debut flag for first-time starters
     # Plan 03-04: target_top3 generation
     # Plan 03-05: categorical CategoricalDtype conversion

@@ -540,21 +540,17 @@ class TestJockeyTrainerStats:
     def test_d08_exact_intersection_150_prior_starts(self) -> None:
         """Test 8: D-08 exact intersection with 150 prior valid starts.
 
-        Jockey with 150 prior valid starts spanning 400 days.
-        - 365-day window: some are excluded (older than 365 days)
-        - 100-start window: should cap at most recent 100
-        - Exact intersection: among the 150, take those that are BOTH
-          within 365 days AND among the most recent 100.
-
-        We construct: 150 races, 80 within 365 days, 70 older.
-        Among the 80 within 365 days, the most recent 80 <= 100, so all 80 are used.
+        Jockey with 150 prior valid starts: 70 old (all outside 365 days),
+        80 recent (all within 365 days).
+        The 70 old are excluded by 365-day constraint -> 80 within 365 days.
+        80 <= 100 so no capping -> all 80 used.
         """
         rows = []
         base_date = pd.Timestamp("2016-06-01")
 
-        # 70 old races (400-330 days ago, all outside 365-day window)
+        # 70 old races: ALL outside 365-day window (400 to 366 days ago)
         for i in range(70):
-            race_date = base_date - pd.Timedelta(days=400 - i)
+            race_date = base_date - pd.Timedelta(days=400 + i)  # 400 to 469 days ago
             rows.append({
                 "race_id": f"OLD_{i:04d}",
                 "race_date": race_date,
@@ -565,19 +561,18 @@ class TestJockeyTrainerStats:
                 "trainer": "調教師X",
             })
 
-        # 80 recent races (within 365 days)
+        # 80 recent races: ALL within 365-day window (days 364 down to ~44)
         for i in range(80):
             race_date = base_date - pd.Timedelta(days=364 - (i * 4))
-            if race_date > base_date - pd.Timedelta(days=365):
-                rows.append({
-                    "race_id": f"REC_{i:04d}",
-                    "race_date": race_date,
-                    "horse_entity_key": f"馬_rec_{i}",
-                    "finish_position": 1,
-                    "finish_note": None,
-                    "jockey": "騎手X",
-                    "trainer": "調教師X",
-                })
+            rows.append({
+                "race_id": f"REC_{i:04d}",
+                "race_date": race_date,
+                "horse_entity_key": f"馬_rec_{i}",
+                "finish_position": 1,
+                "finish_note": None,
+                "jockey": "騎手X",
+                "trainer": "調教師X",
+            })
 
         # Current race
         rows.append({
@@ -597,7 +592,9 @@ class TestJockeyTrainerStats:
         assert len(current) == 1
         row = current.iloc[0]
 
-        # 80 recent valid starts, all wins -> top3_rate = 1.0, rides = 80
+        # 80 recent valid starts within 365 days, all wins
+        # 70 old races outside 365 days excluded
+        # 80 <= 100 so no capping -> rides = 80
         assert row["jockey_rolling_rides"] == 80.0, (
             f"Expected 80 rides (exact intersection), got {row['jockey_rolling_rides']}"
         )
