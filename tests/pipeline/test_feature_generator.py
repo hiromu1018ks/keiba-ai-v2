@@ -13,7 +13,9 @@ import pandas as pd
 import pytest
 
 from src.pipeline.feature_generator import (
+    _compute_person_stats,
     compute_finish_time_zscore,
+    compute_jockey_trainer_stats,
     compute_lag_features,
     convert_margin_to_numeric,
     derive_horse_entity_key,
@@ -383,10 +385,354 @@ class TestLagFeatures:
 
 
 class TestJockeyTrainerStats:
-    """Tests for jockey/trainer rolling statistics (Plan 03-02)."""
+    """Tests for jockey/trainer rolling statistics with sum-based race-level aggregation and exact D-08 intersection (Plan 03-03)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Jockey/trainer stats not yet implemented (Plan 03-02)")
+    @staticmethod
+    def _make_person_stats_df() -> pd.DataFrame:
+        """Create a fixture for basic person stats testing.
+
+        Trainer 調教師A: 3 runners in race R1 (2 top-3, 1 not), 1 runner in race R2
+        Jockey 騎手A: appears in 4 races over time
+        """
+        return pd.DataFrame({
+            "race_id": ["R1", "R1", "R1", "R2", "R3", "R4"],
+            "race_date": pd.to_datetime(["2015-01-01", "2015-01-01", "2015-01-01",
+                                          "2015-02-01", "2015-03-01", "2015-04-01"]),
+            "horse_entity_key": ["馬1_2010", "馬2_2011", "馬3_2012", "馬4_2013", "馬5_2014", "馬6_2015"],
+            "finish_position": [1, 2, 6, 3, 1, 4],
+            "finish_note": [None, None, None, None, None, None],
+            "jockey": ["騎手A", "騎手B", "騎手A", "騎手A", "騎手A", "騎手B"],
+            "trainer": ["調教師A", "調教師A", "調教師A", "調教師A", "調教師B", "調教師B"],
+        })
+
+    def test_jockey_stat_columns_exist(self) -> None:
+        """Test 1: Jockey stat columns exist: jockey_rolling_top3_rate, win_rate, rides."""
+        df = self._make_person_stats_df()
+        result = compute_jockey_trainer_stats(df)
+
+        assert "jockey_rolling_top3_rate" in result.columns
+        assert "jockey_rolling_win_rate" in result.columns
+        assert "jockey_rolling_rides" in result.columns
+
+    def test_trainer_stat_columns_exist(self) -> None:
+        """Test 2: Trainer stat columns exist: trainer_rolling_top3_rate, win_rate, rides."""
+        df = self._make_person_stats_df()
+        result = compute_jockey_trainer_stats(df)
+
+        assert "trainer_rolling_top3_rate" in result.columns
+        assert "trainer_rolling_win_rate" in result.columns
+        assert "trainer_rolling_rides" in result.columns
+
+    def test_first_race_zero_rides(self) -> None:
+        """Test 3: jockey_rolling_rides for a jockey's first race is 0."""
+        df = self._make_person_stats_df()
+        result = compute_jockey_trainer_stats(df)
+
+        # 騎手A's first race is R1 (first row)
+        jockey_a_first = result[
+            (result["jockey"] == "騎手A") & (result["race_id"] == "R1")
+        ]
+        # First appearance: all runners of 騎手A in R1 should have rides=0
+        for _, row in jockey_a_first.iterrows():
+            assert row["jockey_rolling_rides"] == 0.0, (
+                f"First appearance should have 0 rides, got {row['jockey_rolling_rides']}"
+            )
+
+    def test_sum_based_trainer_rate(self) -> None:
+        """Test 4: Trainer with 3 runners (2 top-3, 1 not) produces rate 2/3 = 0.667.
+
+        This is the critical sum-based test: trainer 調教師A has 3 runners in R1,
+        2 finished top-3 (positions 1 and 2) and 1 did not (position 6).
+        The NEXT race (R2) for 調教師A should see rolling_top3_rate = 2/3.
+        """
+        df = self._make_person_stats_df()
+        result = compute_jockey_trainer_stats(df)
+
+        # 調教師A in R2 should see rolling stats from R1
+        trainer_a_r2 = result[
+            (result["trainer"] == "調教師A") & (result["race_id"] == "R2")
+        ]
+        assert len(trainer_a_r2) == 1
+        row = trainer_a_r2.iloc[0]
+
+        assert row["trainer_rolling_top3_rate"] == pytest.approx(2.0 / 3.0, abs=0.01), (
+            f"Expected sum-based rate 2/3=0.667, got {row['trainer_rolling_top3_rate']}"
+        )
+        # win_rate: 1 winner from 3 runners = 1/3
+        assert row["trainer_rolling_win_rate"] == pytest.approx(1.0 / 3.0, abs=0.01), (
+            f"Expected win rate 1/3=0.333, got {row['trainer_rolling_win_rate']}"
+        )
+
+    def test_stats_use_only_past_data(self) -> None:
+        """Test 5: Stats use only past data -- current race does not influence stats.
+
+        Jockey 騎手A in R1 (finish_position 1 and 6): rolling stats should be 0 (first race).
+        In R2 (finish_position 3): rolling stats should reflect R1 only.
+        """
+        df = self._make_person_stats_df()
+        result = compute_jockey_trainer_stats(df)
+
+        # 騎手A in R1: first race, stats should be 0
+        jockey_a_r1 = result[
+            (result["jockey"] == "騎手A") & (result["race_id"] == "R1")
+        ]
+        for _, row in jockey_a_r1.iterrows():
+            assert row["jockey_rolling_rides"] == 0.0, "First race should have 0 rides"
+
+        # 騎手A in R2: stats from R1 only
+        jockey_a_r2 = result[
+            (result["jockey"] == "騎手A") & (result["race_id"] == "R2")
+        ]
+        assert len(jockey_a_r2) == 1
+        row_r2 = jockey_a_r2.iloc[0]
+
+        # R1: 騎手A had 2 runners, 1 top-3 (pos=1), 1 not top-3 (pos=6) -> top3_rate = 1/2
+        assert row_r2["jockey_rolling_top3_rate"] == pytest.approx(1.0 / 2.0, abs=0.01), (
+            f"Expected 1/2=0.5, got {row_r2['jockey_rolling_top3_rate']}"
+        )
+        assert row_r2["jockey_rolling_rides"] == 2.0, (
+            f"Expected 2 rides from R1, got {row_r2['jockey_rolling_rides']}"
+        )
+
+    def test_temporal_invariance(self) -> None:
+        """Test 6: Adding future races does not change current race's stats."""
+        df_base = self._make_person_stats_df()
+
+        # Add a future race
+        future_row = pd.DataFrame({
+            "race_id": ["R5"],
+            "race_date": pd.to_datetime(["2016-01-01"]),
+            "horse_entity_key": ["馬7_2016"],
+            "finish_position": [1],
+            "finish_note": [None],
+            "jockey": ["騎手A"],
+            "trainer": ["調教師C"],
+        })
+        df_extended = pd.concat([df_base, future_row], ignore_index=True)
+
+        result_base = compute_jockey_trainer_stats(df_base)
+        result_extended = compute_jockey_trainer_stats(df_extended)
+
+        # Stats for R1..R4 should be identical
+        for race_id in ["R1", "R2", "R3", "R4"]:
+            base_rows = result_base[result_base["race_id"] == race_id].sort_values("horse_entity_key")
+            ext_rows = result_extended[result_extended["race_id"] == race_id].sort_values("horse_entity_key")
+
+            for col in ["jockey_rolling_top3_rate", "jockey_rolling_win_rate", "jockey_rolling_rides"]:
+                for (_, b), (_, e) in zip(base_rows.iterrows(), ext_rows.iterrows()):
+                    if pd.isna(b[col]) and pd.isna(e[col]):
+                        continue
+                    assert b[col] == pytest.approx(e[col], abs=0.001), (
+                        f"Race {race_id} {col}: base={b[col]} vs extended={e[col]}"
+                    )
+
+    def test_rate_range(self) -> None:
+        """Test 7: Rate values are in [0.0, 1.0] range."""
+        df = self._make_person_stats_df()
+        result = compute_jockey_trainer_stats(df)
+
+        for col in ["jockey_rolling_top3_rate", "jockey_rolling_win_rate",
+                     "trainer_rolling_top3_rate", "trainer_rolling_win_rate"]:
+            non_nan = result[col].dropna()
+            for val in non_nan:
+                assert 0.0 <= val <= 1.0, f"{col} value {val} outside [0, 1]"
+
+    def test_d08_exact_intersection_150_prior_starts(self) -> None:
+        """Test 8: D-08 exact intersection with 150 prior valid starts.
+
+        Jockey with 150 prior valid starts spanning 400 days.
+        - 365-day window: some are excluded (older than 365 days)
+        - 100-start window: should cap at most recent 100
+        - Exact intersection: among the 150, take those that are BOTH
+          within 365 days AND among the most recent 100.
+
+        We construct: 150 races, 80 within 365 days, 70 older.
+        Among the 80 within 365 days, the most recent 80 <= 100, so all 80 are used.
+        """
+        rows = []
+        base_date = pd.Timestamp("2016-06-01")
+
+        # 70 old races (400-330 days ago, all outside 365-day window)
+        for i in range(70):
+            race_date = base_date - pd.Timedelta(days=400 - i)
+            rows.append({
+                "race_id": f"OLD_{i:04d}",
+                "race_date": race_date,
+                "horse_entity_key": f"馬_old_{i}",
+                "finish_position": 1,  # All wins for easy math
+                "finish_note": None,
+                "jockey": "騎手X",
+                "trainer": "調教師X",
+            })
+
+        # 80 recent races (within 365 days)
+        for i in range(80):
+            race_date = base_date - pd.Timedelta(days=364 - (i * 4))
+            if race_date > base_date - pd.Timedelta(days=365):
+                rows.append({
+                    "race_id": f"REC_{i:04d}",
+                    "race_date": race_date,
+                    "horse_entity_key": f"馬_rec_{i}",
+                    "finish_position": 1,
+                    "finish_note": None,
+                    "jockey": "騎手X",
+                    "trainer": "調教師X",
+                })
+
+        # Current race
+        rows.append({
+            "race_id": "CURRENT",
+            "race_date": base_date,
+            "horse_entity_key": "馬_curr",
+            "finish_position": 1,
+            "finish_note": None,
+            "jockey": "騎手X",
+            "trainer": "調教師X",
+        })
+
+        df = pd.DataFrame(rows)
+        result = compute_jockey_trainer_stats(df)
+
+        current = result[result["race_id"] == "CURRENT"]
+        assert len(current) == 1
+        row = current.iloc[0]
+
+        # 80 recent valid starts, all wins -> top3_rate = 1.0, rides = 80
+        assert row["jockey_rolling_rides"] == 80.0, (
+            f"Expected 80 rides (exact intersection), got {row['jockey_rolling_rides']}"
+        )
+        assert row["jockey_rolling_top3_rate"] == pytest.approx(1.0, abs=0.01), (
+            f"Expected 1.0 (all wins in intersection), got {row['jockey_rolling_top3_rate']}"
+        )
+
+    def test_d08_no_constraint_binding(self) -> None:
+        """Test 9: D-08 with 50 prior starts all within 365 days -- all 50 used."""
+        rows = []
+        base_date = pd.Timestamp("2016-06-01")
+
+        # 50 races within 365 days
+        for i in range(50):
+            race_date = base_date - pd.Timedelta(days=364 - (i * 7))
+            rows.append({
+                "race_id": f"R_{i:04d}",
+                "race_date": race_date,
+                "horse_entity_key": f"馬_{i}",
+                "finish_position": 2,  # All 2nd place (top-3 but not win)
+                "finish_note": None,
+                "jockey": "騎手Y",
+                "trainer": "調教師Y",
+            })
+
+        # Current race
+        rows.append({
+            "race_id": "CURRENT",
+            "race_date": base_date,
+            "horse_entity_key": "馬_curr",
+            "finish_position": 1,
+            "finish_note": None,
+            "jockey": "騎手Y",
+            "trainer": "調教師Y",
+        })
+
+        df = pd.DataFrame(rows)
+        result = compute_jockey_trainer_stats(df)
+
+        current = result[result["race_id"] == "CURRENT"]
+        row = current.iloc[0]
+
+        # 50 starts, all top-3 (pos=2), no wins -> top3_rate=1.0, win_rate=0.0
+        assert row["jockey_rolling_rides"] == 50.0
+        assert row["jockey_rolling_top3_rate"] == pytest.approx(1.0, abs=0.01)
+        assert row["jockey_rolling_win_rate"] == pytest.approx(0.0, abs=0.01)
+
+    def test_d08_365_day_constraint_binding(self) -> None:
+        """Test 10: D-08 with 120 prior starts, 80 within 365 days -- uses 80."""
+        rows = []
+        base_date = pd.Timestamp("2016-06-01")
+
+        # 40 old races (outside 365 days) -- all wins
+        for i in range(40):
+            race_date = base_date - pd.Timedelta(days=366 + i)
+            rows.append({
+                "race_id": f"OLD_{i:04d}",
+                "race_date": race_date,
+                "horse_entity_key": f"馬_old_{i}",
+                "finish_position": 1,  # wins
+                "finish_note": None,
+                "jockey": "騎手Z",
+                "trainer": "調教師Z",
+            })
+
+        # 80 recent races (within 365 days) -- all 4th place (not top-3)
+        for i in range(80):
+            race_date = base_date - pd.Timedelta(days=364 - (i * 4))
+            rows.append({
+                "race_id": f"REC_{i:04d}",
+                "race_date": race_date,
+                "horse_entity_key": f"馬_rec_{i}",
+                "finish_position": 4,  # not top-3
+                "finish_note": None,
+                "jockey": "騎手Z",
+                "trainer": "調教師Z",
+            })
+
+        # Current race
+        rows.append({
+            "race_id": "CURRENT",
+            "race_date": base_date,
+            "horse_entity_key": "馬_curr",
+            "finish_position": 1,
+            "finish_note": None,
+            "jockey": "騎手Z",
+            "trainer": "調教師Z",
+        })
+
+        df = pd.DataFrame(rows)
+        result = compute_jockey_trainer_stats(df)
+
+        current = result[result["race_id"] == "CURRENT"]
+        row = current.iloc[0]
+
+        # 80 starts within 365 days, all pos=4 (not top-3) -> top3_rate=0.0
+        # The 40 old wins are excluded by 365-day constraint
+        assert row["jockey_rolling_rides"] == 80.0
+        assert row["jockey_rolling_top3_rate"] == pytest.approx(0.0, abs=0.01)
+        assert row["jockey_rolling_win_rate"] == pytest.approx(0.0, abs=0.01)
+
+    def test_dnf_count_as_valid_starts(self) -> None:
+        """Test 11: DNF (中) counts as valid start in denominator; 取/除 do NOT."""
+        rows = [
+            # Race 1: 騎手W has 3 runners: 1 top-3, 1 DNF (中), 1 取 (scratched)
+            {"race_id": "R1", "race_date": pd.Timestamp("2015-01-01"),
+             "horse_entity_key": "馬1", "finish_position": 1, "finish_note": None,
+             "jockey": "騎手W", "trainer": "調教師W"},
+            {"race_id": "R1", "race_date": pd.Timestamp("2015-01-01"),
+             "horse_entity_key": "馬2", "finish_position": None, "finish_note": "中",
+             "jockey": "騎手W", "trainer": "調教師W"},
+            {"race_id": "R1", "race_date": pd.Timestamp("2015-01-01"),
+             "horse_entity_key": "馬3", "finish_position": None, "finish_note": "取",
+             "jockey": "騎手W", "trainer": "調教師W"},
+            # Race 2: 騎手W in next race
+            {"race_id": "R2", "race_date": pd.Timestamp("2015-02-01"),
+             "horse_entity_key": "馬4", "finish_position": 3, "finish_note": None,
+             "jockey": "騎手W", "trainer": "調教師W"},
+        ]
+        df = pd.DataFrame(rows)
+        result = compute_jockey_trainer_stats(df)
+
+        # R2: 騎手W stats from R1
+        # R1 valid starts: pos=1 (top-3, valid), pos=None+中 (DNF, valid), pos=None+取 (NOT valid)
+        # -> valid_start_count = 2, top3_count = 1
+        r2 = result[(result["jockey"] == "騎手W") & (result["race_id"] == "R2")]
+        assert len(r2) == 1
+        row = r2.iloc[0]
+
+        assert row["jockey_rolling_rides"] == 2.0, (
+            f"Expected 2 valid starts (DNF counts, scratch doesn't), got {row['jockey_rolling_rides']}"
+        )
+        assert row["jockey_rolling_top3_rate"] == pytest.approx(1.0 / 2.0, abs=0.01), (
+            f"Expected 1/2=0.5, got {row['jockey_rolling_top3_rate']}"
+        )
 
 
 class TestTargetVariable:
