@@ -301,11 +301,11 @@ def compute_finish_time_zscore(df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
     grp = race_means.groupby(["course_name", "distance", "surface"])
-    race_means["norm_mean"] = (
-        grp["race_ft_mean"].expanding(min_periods=5).mean().shift(1).values
+    race_means["norm_mean"] = grp["race_ft_mean"].transform(
+        lambda s: s.expanding(min_periods=5).mean().shift(1)
     )
-    race_means["norm_std"] = (
-        grp["race_ft_mean"].expanding(min_periods=5).std().shift(1).values
+    race_means["norm_std"] = grp["race_ft_mean"].transform(
+        lambda s: s.expanding(min_periods=5).std().shift(1)
     )
 
     # Step 4: Join normalization parameters back to entry-level DataFrame

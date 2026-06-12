@@ -1131,6 +1131,89 @@ class TestFinishTimeZscore:
             for z in non_nan_zscores:
                 assert -5 <= z <= 5, f"Z-score {z} outside expected range [-5, 5]"
 
+    def test_cross_group_no_leakage(self) -> None:
+        """Test 12: Z-scores do not leak across (course, distance, surface) group boundaries.
+
+        Creates two groups with 7 races each (enough for min_periods=5 to produce
+        valid z-scores). Verifies:
+        1. The first valid z-score row in each group uses only its own group's history.
+        2. No z-score value in group B depends on any race in group A.
+        """
+        rows = []
+        # Group A: 東京 2000 芝, 7 races with times ~118s
+        for race_num in range(1, 8):
+            t1 = 118.0 + race_num * 0.5
+            t2 = 118.0 + race_num * 0.5 + 0.3
+            t3 = 118.0 + race_num * 0.5 + 0.6
+            for horse_idx, t in enumerate([t1, t2, t3]):
+                rows.append({
+                    "race_id": f"GA_R{race_num}",
+                    "race_date": f"2015-{race_num:02d}-01",
+                    "course_name": "東京",
+                    "distance": 2000,
+                    "surface": "芝",
+                    "finish_time": f"1:{t - 60:.1f}",
+                    "horse_entity_key": f"GA_H{race_num}_{horse_idx}",
+                })
+
+        # Group B: 中山 1600 ダート, 7 races with times ~95s (completely different)
+        for race_num in range(1, 8):
+            t1 = 95.0 + race_num * 0.4
+            t2 = 95.0 + race_num * 0.4 + 0.2
+            t3 = 95.0 + race_num * 0.4 + 0.5
+            for horse_idx, t in enumerate([t1, t2, t3]):
+                rows.append({
+                    "race_id": f"GB_R{race_num}",
+                    "race_date": f"2015-{race_num:02d}-15",
+                    "course_name": "中山",
+                    "distance": 1600,
+                    "surface": "ダート",
+                    "finish_time": f"1:{t - 60:.1f}",
+                    "horse_entity_key": f"GB_H{race_num}_{horse_idx}",
+                })
+
+        df = pd.DataFrame(rows)
+        # Shuffle to ensure sort-order independence
+        df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+        result = compute_finish_time_zscore(df)
+
+        # Now compute z-scores for each group INDEPENDENTLY and compare
+        for group_label, course, dist, surf in [
+            ("A", "東京", 2000, "芝"),
+            ("B", "中山", 1600, "ダート"),
+        ]:
+            group_result = result[
+                (result["course_name"] == course)
+                & (result["distance"] == dist)
+                & (result["surface"] == surf)
+            ].sort_values(["race_date", "race_id"])
+
+            # Also compute z-scores for this group alone
+            group_only_df = df[
+                (df["course_name"] == course)
+                & (df["distance"] == dist)
+                & (df["surface"] == surf)
+            ].copy()
+            group_only_result = compute_finish_time_zscore(group_only_df)
+
+            # Sort both by (race_id, horse_entity_key) for comparison
+            sort_cols = ["race_id", "horse_entity_key"]
+            merged_result = group_result.sort_values(sort_cols).reset_index(drop=True)
+            standalone_result = group_only_result.sort_values(sort_cols).reset_index(drop=True)
+
+            assert len(merged_result) == len(standalone_result)
+
+            # Z-scores should be identical (no cross-group contamination)
+            for i in range(len(merged_result)):
+                z_multi = merged_result.iloc[i]["finish_time_zscore"]
+                z_solo = standalone_result.iloc[i]["finish_time_zscore"]
+                if pd.isna(z_multi) and pd.isna(z_solo):
+                    continue
+                assert z_multi == pytest.approx(z_solo, abs=0.001, nan_ok=False), (
+                    f"Group {group_label} race {merged_result.iloc[i]['race_id']}: "
+                    f"multi-group z-score {z_multi} != standalone {z_solo}"
+                )
+
     # -- Helper: create fixtures for race-boundary tests --
 
     @staticmethod
