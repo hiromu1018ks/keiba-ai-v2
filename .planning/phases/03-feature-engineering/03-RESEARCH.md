@@ -471,22 +471,16 @@ def convert_to_categorical(df: pd.DataFrame) -> pd.DataFrame:
 
 **If this table is empty:** All claims in this research were verified or cited.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **ROADMAP success criterion mentions "popularity/win odds" but D-15 excludes them**
-   - What we know: ROADMAP Phase 3 success criteria #1 lists "popularity/win odds" as features. CONTEXT.md D-15 explicitly excludes them (post-race). Phase 1 D-03/D-06 classified them as post-race.
-   - What's unclear: Whether to update ROADMAP to match D-15, or whether the discrepancy indicates a design conflict.
-   - Recommendation: D-15 takes precedence (CONTEXT.md is the locked decision). The planner should note this discrepancy and confirm with user if needed, but implement per D-15.
+1. **ROADMAP success criterion mentions "popularity/win odds" but D-15 excludes them** (RESOLVED)
+   - Resolution: D-15 takes precedence. Plan 01 includes ROADMAP Discrepancy Note. EXCLUDE_FROM_FEATURES in Plan 05 enforces exclusion.
 
-2. **Feature Parquet file naming and structure**
-   - What we know: CONTEXT.md mentions "学習用: target_top3付き / 予測用: target_top3なし" but doesn't specify exact file names.
-   - What's unclear: Whether to use two separate files or one file with a flag column.
-   - Recommendation: Two separate Parquet files (`features_train.parquet` and `features_pred.parquet`) to enforce the separation at the file level. This is Claude's Discretion per CONTEXT.md.
+2. **Feature Parquet file naming and structure** (RESOLVED)
+   - Resolution: Two separate Parquet files (`features_train.parquet` with target_top3, `features_pred.parquet` without). Confirmed in Plan 05 Task 1.
 
-3. **Jockey/trainer rolling stats: exact implementation of D-08's "100 rides or 1 year" constraint**
-   - What we know: D-08 specifies "直近100戦または直近1年間の短い方". This requires per-row lookback computation.
-   - What's unclear: Whether to implement this as a per-row loop (slow but precise) or as an approximation using rolling windows.
-   - Recommendation: For 311K rows, a per-row approach using pandas operations is feasible. Pre-compute expanding stats and apply the constraint as a post-processing step. This is Claude's Discretion.
+3. **Jockey/trainer rolling stats: exact implementation of D-08's "100 rides or 1 year" constraint** (RESOLVED)
+   - Resolution: Per-row approach with exact intersection semantics (BOTH conditions must hold: ≤100 rides AND ≤365 days). Confirmed in Plan 03 Task 2 with dedicated tests.
 
 ## Environment Availability
 
