@@ -517,3 +517,166 @@ def tmp_feature_dir(tmp_path: Path) -> Path:
     feature_dir = tmp_path / "data" / "feature"
     feature_dir.mkdir(parents=True, exist_ok=True)
     return feature_dir
+
+
+# ---------------------------------------------------------------------------
+# Lag feature fixtures (Plan 03-03)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_lag_merged_df() -> pd.DataFrame:
+    """Pre-built DataFrame for lag feature tests with scratch-between-valid-starts.
+
+    Contains ~16 rows with:
+    - Horse "馬A" with 3 valid starts on different dates (tests basic lag correctness)
+    - Horse "馬B" with valid_start, SCRATCHED (取), valid_start (tests scratch filtering)
+    - Horse "アームストロング" (born 2011) with 2 valid starts (tests entity key isolation)
+    - Horse "アームストロング" (born 2008) with 1 valid start (same name, different entity)
+    - Same-day races at different courses for "馬A" (tests race_id ordering in lag chain)
+
+    All columns needed by compute_lag_features are included.
+    """
+    rows = [
+        # Horse 馬A: race 1 at 東京 on 2015-01-01 (R1) -- finish_position=3
+        {
+            "race_id": "201501010101", "race_date": "2015-01-01",
+            "horse_entity_key": "馬A_2010", "horse_name": "馬A",
+            "finish_position": 3, "finish_note": None,
+            "last_3f": 35.0, "corner_4": 3,
+            "finish_time_zscore": 0.5, "margin_numeric": 1.5,
+            "jockey": "騎手A", "trainer": "調教師X",
+        },
+        # Horse 馬A: race 2 at 東京 on 2015-01-01 (R2) -- same day, different race_id
+        # race_id 201501010102 > 201501010101 so this comes after R1
+        {
+            "race_id": "201501010102", "race_date": "2015-01-01",
+            "horse_entity_key": "馬A_2010", "horse_name": "馬A",
+            "finish_position": 1, "finish_note": None,
+            "last_3f": 34.0, "corner_4": 1,
+            "finish_time_zscore": -1.2, "margin_numeric": None,
+            "jockey": "騎手A", "trainer": "調教師X",
+        },
+        # Horse 馬A: race 3 at 中山 on 2015-02-02 -- tests cross-course lag
+        {
+            "race_id": "201502020201", "race_date": "2015-02-02",
+            "horse_entity_key": "馬A_2010", "horse_name": "馬A",
+            "finish_position": 2, "finish_note": None,
+            "last_3f": 34.5, "corner_4": 2,
+            "finish_time_zscore": 0.3, "margin_numeric": 0.75,
+            "jockey": "騎手A", "trainer": "調教師X",
+        },
+        # Horse 馬B: race 1 at 東京 on 2015-01-01 (R1) -- valid start, pos=5
+        {
+            "race_id": "201501010101", "race_date": "2015-01-01",
+            "horse_entity_key": "馬B_2011", "horse_name": "馬B",
+            "finish_position": 5, "finish_note": None,
+            "last_3f": 36.0, "corner_4": 5,
+            "finish_time_zscore": 1.5, "margin_numeric": 3.0,
+            "jockey": "騎手B", "trainer": "調教師Y",
+        },
+        # Horse 馬B: SCRATCHED at 東京 on 2015-01-01 (R2) -- 取, does NOT run
+        {
+            "race_id": "201501010102", "race_date": "2015-01-01",
+            "horse_entity_key": "馬B_2011", "horse_name": "馬B",
+            "finish_position": None, "finish_note": "取",
+            "last_3f": None, "corner_4": None,
+            "finish_time_zscore": None, "margin_numeric": None,
+            "jockey": "騎手B", "trainer": "調教師Y",
+        },
+        # Horse 馬B: race 2 at 中山 on 2015-02-02 -- valid start, pos=3
+        # prev_1 should point to the R1 result (pos=5), NOT the scratched row
+        {
+            "race_id": "201502020201", "race_date": "2015-02-02",
+            "horse_entity_key": "馬B_2011", "horse_name": "馬B",
+            "finish_position": 3, "finish_note": None,
+            "last_3f": 34.8, "corner_4": 2,
+            "finish_time_zscore": -0.5, "margin_numeric": 1.25,
+            "jockey": "騎手B", "trainer": "調教師Y",
+        },
+        # Horse 馬B: race 3 at 京都 on 2015-03-03 (R1) -- valid start, pos=1
+        {
+            "race_id": "201503030101", "race_date": "2015-03-03",
+            "horse_entity_key": "馬B_2011", "horse_name": "馬B",
+            "finish_position": 1, "finish_note": None,
+            "last_3f": 33.5, "corner_4": 1,
+            "finish_time_zscore": -2.0, "margin_numeric": None,
+            "jockey": "騎手B", "trainer": "調教師Y",
+        },
+        # Horse アームストロング_2011: race 1 at 東京 on 2015-01-01 (R1) -- pos=1
+        {
+            "race_id": "201501010101", "race_date": "2015-01-01",
+            "horse_entity_key": "アームストロング_2011", "horse_name": "アームストロング",
+            "finish_position": 1, "finish_note": None,
+            "last_3f": 34.5, "corner_4": 1,
+            "finish_time_zscore": -1.0, "margin_numeric": None,
+            "jockey": "騎手C", "trainer": "調教師Z",
+        },
+        # Horse アームストロング_2011: race 2 at 中山 on 2015-01-01 (R1) -- same day, different course
+        {
+            "race_id": "201501010201", "race_date": "2015-01-01",
+            "horse_entity_key": "アームストロング_2011", "horse_name": "アームストロング",
+            "finish_position": 4, "finish_note": None,
+            "last_3f": 35.5, "corner_4": 3,
+            "finish_time_zscore": 0.8, "margin_numeric": 2.0,
+            "jockey": "騎手C", "trainer": "調教師Z",
+        },
+        # Horse アームストロング_2008: race 1 at 中山 on 2015-01-01 (R1) -- pos=2
+        # Different entity key from the other アームストロング
+        {
+            "race_id": "201501010201", "race_date": "2015-01-01",
+            "horse_entity_key": "アームストロング_2008", "horse_name": "アームストロング",
+            "finish_position": 2, "finish_note": None,
+            "last_3f": 34.2, "corner_4": 2,
+            "finish_time_zscore": -0.3, "margin_numeric": 0.5,
+            "jockey": "騎手D", "trainer": "調教師W",
+        },
+        # Horse 馬C: DNF at 中山 on 2015-01-01 (R1) -- finish_note=中 (valid start)
+        {
+            "race_id": "201501010201", "race_date": "2015-01-01",
+            "horse_entity_key": "馬C_2012", "horse_name": "馬C",
+            "finish_position": None, "finish_note": "中",
+            "last_3f": None, "corner_4": None,
+            "finish_time_zscore": None, "margin_numeric": None,
+            "jockey": "騎手E", "trainer": "調教師V",
+        },
+        # Horse 馬C: race 2 at 中山 on 2015-02-02 (R1) -- valid start
+        # prev_1 should point to DNF row (中 is valid start)
+        {
+            "race_id": "201502020201", "race_date": "2015-02-02",
+            "horse_entity_key": "馬C_2012", "horse_name": "馬C",
+            "finish_position": 6, "finish_note": None,
+            "last_3f": 36.5, "corner_4": 4,
+            "finish_time_zscore": 1.8, "margin_numeric": 4.0,
+            "jockey": "騎手E", "trainer": "調教師V",
+        },
+        # Horse 馬D: REMOVED (除) at 中山 on 2015-02-02 (R1) -- NOT a valid start
+        {
+            "race_id": "201502020201", "race_date": "2015-02-02",
+            "horse_entity_key": "馬D_2013", "horse_name": "馬D",
+            "finish_position": None, "finish_note": "除",
+            "last_3f": None, "corner_4": None,
+            "finish_time_zscore": None, "margin_numeric": None,
+            "jockey": "騎手F", "trainer": "調教師U",
+        },
+        # Horse 馬E: extra horse at 京都 on 2015-03-03 (R1) -- pos=4
+        {
+            "race_id": "201503030101", "race_date": "2015-03-03",
+            "horse_entity_key": "馬E_2014", "horse_name": "馬E",
+            "finish_position": 4, "finish_note": None,
+            "last_3f": 35.0, "corner_4": 3,
+            "finish_time_zscore": 0.2, "margin_numeric": 1.0,
+            "jockey": "騎手G", "trainer": "調教師A",
+        },
+        # Horse 馬F: extra horse at 京都 on 2015-03-03 (R2) -- pos=1
+        {
+            "race_id": "201503030102", "race_date": "2015-03-03",
+            "horse_entity_key": "馬F_2015", "horse_name": "馬F",
+            "finish_position": 1, "finish_note": None,
+            "last_3f": 33.8, "corner_4": 1,
+            "finish_time_zscore": -1.5, "margin_numeric": None,
+            "jockey": "騎手H", "trainer": "調教師A",
+        },
+    ]
+    df = pd.DataFrame(rows)
+    return df.sort_values(["horse_entity_key", "race_date", "race_id"]).reset_index(drop=True)

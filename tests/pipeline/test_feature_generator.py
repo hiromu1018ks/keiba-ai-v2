@@ -14,6 +14,7 @@ import pytest
 
 from src.pipeline.feature_generator import (
     compute_finish_time_zscore,
+    compute_lag_features,
     convert_margin_to_numeric,
     derive_horse_entity_key,
     extract_horse_basic_features,
@@ -211,10 +212,174 @@ class TestHorseBasicFeatures:
 
 
 class TestLagFeatures:
-    """Tests for lag feature generation (Plan 03-02)."""
+    """Tests for lag feature generation with valid-start filtering (Plan 03-03)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Lag features not yet implemented (Plan 03-02)")
+    def test_lag_columns_exist(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 1: All 25 raw lag columns exist: prev_{1..5}_{metric}."""
+        result = compute_lag_features(sample_lag_merged_df)
+
+        metrics = ["finish_position", "last_3f", "corner_4", "finish_time_zscore", "margin_numeric"]
+        for metric in metrics:
+            for lag in range(1, 6):
+                col = f"prev_{lag}_{metric}"
+                assert col in result.columns, f"Missing lag column: {col}"
+
+    def test_prev_1_temporal_safety(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 2: prev_1_finish_position for horse's 2nd race equals finish_position from 1st race."""
+        result = compute_lag_features(sample_lag_merged_df)
+
+        # 馬A: race 1 (pos=3), race 2 (pos=1), race 3 (pos=2)
+        horse_a = result[result["horse_entity_key"] == "馬A_2010"].sort_values(
+            ["race_date", "race_id"]
+        )
+        assert len(horse_a) == 3
+
+        # 2nd race: prev_1 should be 1st race's finish_position
+        race2 = horse_a.iloc[1]
+        assert race2["prev_1_finish_position"] == 3.0, (
+            f"prev_1_finish_position for 2nd race should be 3.0, got {race2['prev_1_finish_position']}"
+        )
+
+        # 3rd race: prev_1 should be 2nd race's finish_position
+        race3 = horse_a.iloc[2]
+        assert race3["prev_1_finish_position"] == 1.0, (
+            f"prev_1_finish_position for 3rd race should be 1.0, got {race3['prev_1_finish_position']}"
+        )
+
+    def test_first_race_nan_lags(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 3: prev_1_finish_position for a horse's first race is NaN."""
+        result = compute_lag_features(sample_lag_merged_df)
+
+        # 馬A_2010: first valid start at 201501010101
+        horse_a_first = result[
+            (result["horse_entity_key"] == "馬A_2010")
+            & (result["race_id"] == "201501010101")
+        ]
+        assert len(horse_a_first) == 1
+        assert pd.isna(horse_a_first.iloc[0]["prev_1_finish_position"]), (
+            "First race should have NaN prev_1_finish_position"
+        )
+
+    def test_prev3_stat_columns_exist(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 4: 3-race statistics columns exist: prev3_{metric}_mean, prev3_{metric}_std."""
+        result = compute_lag_features(sample_lag_merged_df)
+
+        metrics = ["finish_position", "last_3f", "corner_4", "finish_time_zscore", "margin_numeric"]
+        for metric in metrics:
+            assert f"prev3_{metric}_mean" in result.columns, f"Missing: prev3_{metric}_mean"
+            assert f"prev3_{metric}_std" in result.columns, f"Missing: prev3_{metric}_std"
+
+    def test_prev5_stat_columns_exist(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 5: 5-race statistics columns exist: prev5_{metric}_mean, prev5_{metric}_std."""
+        result = compute_lag_features(sample_lag_merged_df)
+
+        metrics = ["finish_position", "last_3f", "corner_4", "finish_time_zscore", "margin_numeric"]
+        for metric in metrics:
+            assert f"prev5_{metric}_mean" in result.columns, f"Missing: prev5_{metric}_mean"
+            assert f"prev5_{metric}_std" in result.columns, f"Missing: prev5_{metric}_std"
+
+    def test_prev3_stats_with_fewer_races(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 6: Horse with only 2 past races uses 2 races for prev3 stats (min_periods=1)."""
+        result = compute_lag_features(sample_lag_merged_df)
+
+        # 馬A_2010: 3rd race (201502020201) has 2 prior valid starts
+        horse_a_race3 = result[
+            (result["horse_entity_key"] == "馬A_2010")
+            & (result["race_id"] == "201502020201")
+        ]
+        assert len(horse_a_race3) == 1
+        row = horse_a_race3.iloc[0]
+
+        # prev3_finish_position_mean should use 2 prior values (3.0 and 1.0), not NaN
+        assert not pd.isna(row["prev3_finish_position_mean"]), (
+            "prev3 stats should not be NaN with 2 prior races (min_periods=1)"
+        )
+        expected_mean = (3.0 + 1.0) / 2.0
+        assert row["prev3_finish_position_mean"] == pytest.approx(expected_mean, abs=0.01), (
+            f"Expected prev3_mean={expected_mean}, got {row['prev3_finish_position_mean']}"
+        )
+
+    def test_scratched_entry_does_not_consume_lag_position(
+        self, sample_lag_merged_df: pd.DataFrame
+    ) -> None:
+        """Test 7: A SCRATCHED entry (取) does NOT consume a lag position.
+
+        Horse 馬B_2011: valid(pos=5), scratched(取), valid(pos=3), valid(pos=1)
+        The 3rd valid start (pos=3) should have prev_1=5 (from 1st valid start),
+        NOT NaN (from the scratched row).
+        """
+        result = compute_lag_features(sample_lag_merged_df)
+
+        # 馬B_2011: 3rd valid start at 201502020201 (pos=3)
+        horse_b_race3 = result[
+            (result["horse_entity_key"] == "馬B_2011")
+            & (result["race_id"] == "201502020201")
+        ]
+        assert len(horse_b_race3) == 1
+        row = horse_b_race3.iloc[0]
+
+        # prev_1 should point to the first valid start (pos=5), skipping the scratch
+        assert row["prev_1_finish_position"] == 5.0, (
+            f"prev_1_finish_position should be 5.0 (skipping scratched entry), got {row['prev_1_finish_position']}"
+        )
+
+        # The scratched entry itself should have all-NaN lags
+        horse_b_scratched = result[
+            (result["horse_entity_key"] == "馬B_2011")
+            & (result["finish_note"] == "取")
+        ]
+        assert len(horse_b_scratched) == 1
+        scratched_row = horse_b_scratched.iloc[0]
+        assert pd.isna(scratched_row["prev_1_finish_position"]), (
+            "Scratched entry should have NaN prev_1_finish_position"
+        )
+
+    def test_entity_key_isolation(self, sample_lag_merged_df: pd.DataFrame) -> None:
+        """Test 8: Same-name horses with different birth years get independent lag histories.
+
+        アームストロング_2011: race 1 (pos=1), race 2 (pos=4)
+        アームストロング_2008: race 1 (pos=2) -- should NOT see アームストロング_2011's history
+        """
+        result = compute_lag_features(sample_lag_merged_df)
+
+        # アームストロング_2008: first (and only) race should have NaN lag
+        armstrong_2008 = result[
+            (result["horse_entity_key"] == "アームストロング_2008")
+        ]
+        assert len(armstrong_2008) == 1
+        assert pd.isna(armstrong_2008.iloc[0]["prev_1_finish_position"]), (
+            "Different entity should have NaN lag (independent history)"
+        )
+
+        # アームストロング_2011: second race should see first race (pos=1)
+        armstrong_2011_race2 = result[
+            (result["horse_entity_key"] == "アームストロング_2011")
+            & (result["race_id"] == "201501010201")
+        ]
+        assert len(armstrong_2011_race2) == 1
+        assert armstrong_2011_race2.iloc[0]["prev_1_finish_position"] == 1.0, (
+            "prev_1 should be from own entity's prior race, not from same-name different entity"
+        )
+
+    def test_same_day_races_ordered_by_race_id(
+        self, sample_lag_merged_df: pd.DataFrame
+    ) -> None:
+        """Test 9: Same-day races at different courses are ordered by race_id in the lag chain.
+
+        馬A_2010: R1 (201501010101, pos=3), R2 (201501010102, pos=1) -- same date
+        prev_1 for R2 should be R1's result (pos=3), since 201501010101 < 201501010102.
+        """
+        result = compute_lag_features(sample_lag_merged_df)
+
+        # 馬A_2010: race at 201501010102 should see prev_1 from 201501010101
+        horse_a_r2 = result[
+            (result["horse_entity_key"] == "馬A_2010")
+            & (result["race_id"] == "201501010102")
+        ]
+        assert len(horse_a_r2) == 1
+        assert horse_a_r2.iloc[0]["prev_1_finish_position"] == 3.0, (
+            f"Same-day race R2 should see R1's finish_position=3.0, got {horse_a_r2.iloc[0]['prev_1_finish_position']}"
+        )
 
 
 class TestJockeyTrainerStats:
