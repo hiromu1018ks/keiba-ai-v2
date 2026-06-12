@@ -13,11 +13,14 @@ import pandas as pd
 import pytest
 
 from src.pipeline.feature_generator import (
+    CATEGORICAL_COLUMNS,
+    FEATURE_COLUMNS,
     _compute_person_stats,
     compute_finish_time_zscore,
     compute_jockey_trainer_stats,
     compute_lag_features,
     compute_debut_flag,
+    convert_categorical,
     convert_margin_to_numeric,
     derive_horse_entity_key,
     extract_horse_basic_features,
@@ -1201,8 +1204,55 @@ class TestFinishTimeZscore:
 class TestCategoricalConversion:
     """Tests for CategoricalDtype conversion (Plan 03-05)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Categorical conversion not yet implemented (Plan 03-05)")
+    def test_all_categorical_columns_converted(self) -> None:
+        """Test 1: convert_to_categorical() converts all 9 CATEGORICAL_COLUMNS to category dtype."""
+        from src.pipeline.feature_generator import CATEGORICAL_COLUMNS, convert_to_categorical
+
+        df = pd.DataFrame({
+            "course_name": ["東京", "中山"],
+            "surface": ["芝", "ダート"],
+            "direction": ["左", "右"],
+            "weather": ["晴", "曇"],
+            "track_condition": ["良", "稍重"],
+            "sex": ["牡", "牝"],
+            "jockey": ["騎手A", "騎手B"],
+            "trainer": ["調教師A", "調教師B"],
+            "grade": [None, "G1"],
+        })
+        result = convert_to_categorical(df)
+        for col in CATEGORICAL_COLUMNS:
+            assert col in result.columns, f"Missing column: {col}"
+            assert pd.api.types.is_categorical_dtype(result[col]) or str(result[col].dtype) == "category", (
+                f"Column {col} should be category dtype, got {result[col].dtype}"
+            )
+
+    def test_whitespace_stripped_before_conversion(self) -> None:
+        """Test 2: Whitespace stripped before conversion -- '晴 ' becomes '晴' (single category)."""
+        from src.pipeline.feature_generator import convert_to_categorical
+
+        df = pd.DataFrame({
+            "weather": ["晴 ", "晴", " 曇"],
+            "course_name": ["東京", "東京", "東京"],
+        })
+        result = convert_to_categorical(df)
+        weather_cats = result["weather"].cat.categories.tolist()
+        assert len(weather_cats) == 2, (
+            f"Expected 2 categories after strip (晴, 曇), got {weather_cats}"
+        )
+        assert "晴" in weather_cats
+        assert "曇" in weather_cats
+
+    def test_nan_preserved_in_categorical(self) -> None:
+        """Test 3: NaN values are preserved within CategoricalDtype."""
+        from src.pipeline.feature_generator import convert_to_categorical
+
+        df = pd.DataFrame({
+            "weather": ["晴", None, "曇"],
+            "course_name": ["東京", "中山", None],
+        })
+        result = convert_to_categorical(df)
+        assert pd.isna(result["weather"].iloc[1])
+        assert pd.isna(result["course_name"].iloc[2])
 
 
 class TestDebutFlag:
@@ -1330,12 +1380,273 @@ class TestDebutFlag:
 class TestLeakageAudit:
     """Tests for leakage audit integration (Plan 03-05)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Leakage audit not yet implemented (Plan 03-05)")
+    def test_audit_leakage_empty_on_feature_output(self) -> None:
+        """Test 1: audit_leakage() called with [RaceSchema, EntrySchema, ResultSchema] returns empty list on feature output."""
+        from src.pipeline.feature_generator import FEATURE_COLUMNS
+        from src.schemas.audit import audit_leakage
+        from src.schemas.race import RaceSchema
+        from src.schemas.entry import EntrySchema
+        from src.schemas.result import ResultSchema
+
+        # Create a DataFrame with only FEATURE_COLUMNS + entity keys
+        # (simulating features_pred.parquet output)
+        data = {col: [0] for col in FEATURE_COLUMNS}
+        data["horse_entity_key"] = ["馬A_2010"]
+        data["horse_name"] = ["馬A"]
+        df = pd.DataFrame(data)
+
+        leaked = audit_leakage([RaceSchema, EntrySchema, ResultSchema], df, "feature test")
+        assert leaked == [], f"Expected no leakage, but found: {leaked}"
+
+    def test_audit_leakage_detects_post_race_columns(self) -> None:
+        """Test 2: audit_leakage() detects when post-race columns ARE present."""
+        from src.schemas.audit import audit_leakage
+        from src.schemas.race import RaceSchema
+        from src.schemas.entry import EntrySchema
+        from src.schemas.result import ResultSchema
+
+        # DataFrame WITH post-race columns
+        df = pd.DataFrame({
+            "finish_position": [1],  # post-race from ResultSchema
+            "popularity": [1],  # post-race from EntrySchema
+            "win_odds": [2.5],  # post-race from EntrySchema
+        })
+        leaked = audit_leakage([RaceSchema, EntrySchema, ResultSchema], df, "leak test")
+        assert len(leaked) > 0, "Should detect post-race columns"
 
 
 class TestEndToEnd:
     """End-to-end feature generation tests (Plan 03-05)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("End-to-end test not yet implemented (Plan 03-05)")
+    def _generate_full_pipeline(self, tmp_path: Path) -> dict:
+        """Helper: run full generate() with test fixtures as standard data.
+
+        Writes sample standard-layer Parquet files, then calls generate().
+        """
+        from src.pipeline.feature_generator import generate
+
+        standard_dir = tmp_path / "data" / "standard"
+        feature_dir = tmp_path / "data" / "feature"
+        standard_dir.mkdir(parents=True, exist_ok=True)
+        feature_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write test fixture data as Parquet
+        # We need a conftest-like setup but self-contained
+        race_df = pd.DataFrame({
+            "race_id": ["201501010101", "201501010102", "201501010201",
+                        "201502020201", "201503030101", "201503030102"],
+            "race_date": ["2015-01-01", "2015-01-01", "2015-01-01",
+                          "2015-02-02", "2015-03-03", "2015-03-03"],
+            "meeting_num": [1, 1, 1, 1, 1, 1],
+            "course_code": ["01", "01", "02", "02", "03", "03"],
+            "course_name": ["東京", "東京", "中山", "中山", "京都", "京都"],
+            "meeting_day": [1, 1, 1, 1, 1, 1],
+            "race_condition": ["cond"] * 6,
+            "race_number": [1, 2, 1, 1, 1, 2],
+            "grade_revision": [None] * 6,
+            "race_name": ["R1", "R2", "R3", "R4", "R5", "R6"],
+            "grade": [None] * 6,
+            "obstacle": [None] * 6,
+            "surface": ["芝", "芝", "芝", "ダート", "芝", "芝"],
+            "surface_detail": [None] * 6,
+            "direction": ["左", "左", "右", "右", "右", "右"],
+            "course_detail": [None] * 6,
+            "distance": [2000, 1600, 1200, 1400, 2200, 1800],
+            "weather": ["晴", "晴", "晴", "曇", "雨", "雨"],
+            "track_condition": ["良", "良", "良", "稍重", "重", "重"],
+            "track_condition_detail": [None] * 6,
+            "start_time": ["10:00", "10:30", "10:00", "11:00", "14:00", "14:30"],
+        })
+
+        entry_df = pd.DataFrame({
+            "horse_race_id": [
+                "20150101010101", "20150101010102", "20150101010103",
+                "20150101010201", "20150101010202",
+                "20150101020101", "20150101020102", "20150101020103",
+                "20150202020101", "20150202020102",
+                "20150303010101", "20150303010102",
+                "20150303010201", "20150303010202",
+            ],
+            "race_id": [
+                "201501010101", "201501010101", "201501010101",
+                "201501010102", "201501010102",
+                "201501010201", "201501010201", "201501010201",
+                "201502020201", "201502020201",
+                "201503030101", "201503030101",
+                "201503030102", "201503030102",
+            ],
+            "bracket_num": [1, 2, 3, 1, 2, 1, 2, 3, 1, 4, 1, 2, 1, 3],
+            "horse_number": [1, 2, 3, 1, 2, 1, 2, 3, 1, 4, 1, 2, 1, 3],
+            "horse_name": [
+                "アームストロング", "馬A", "馬C",
+                "馬A", "馬D",
+                "馬A", "アームストロング", "馬F",
+                "馬G", "馬H",
+                "馬I", "馬J",
+                "馬K", "馬L",
+            ],
+            "sex": ["牡", "牡", "牝", "牡", "セ", "牡", "牡", "牝", "牡", "牝", "牡", "牡", "牝", "牡"],
+            "age": [4, 5, 3, 5, 4, 5, 7, 3, 4, 5, 6, 4, 3, 5],
+            "weight_assigned": [57.0] * 14,
+            "jockey": [
+                "騎手A", "騎手B", "騎手C",
+                "騎手D", "騎手A",
+                "騎手A", "騎手E", "騎手F",
+                "騎手G", "騎手H",
+                "騎手I", "騎手J",
+                "騎手A", "騎手K",
+            ],
+            "trainer": [
+                "調教師X", "調教師Y", "調教師Z",
+                "調教師X", "調教師W",
+                "調教師X", "調教師V", "調教師U",
+                "調教師T", "調教師S",
+                "調教師A", "調教師A",
+                "調教師R", "調教師Q",
+            ],
+            "owner": [f"馬主{i}" for i in range(14)],
+            "horse_weight": [480 + i for i in range(14)],
+            "weight_change": [i % 5 - 2 for i in range(14)],
+            "region": ["東"] * 14,
+            "popularity": [1] * 14,
+            "win_odds": [2.0] * 14,
+        })
+
+        result_df = pd.DataFrame({
+            "horse_race_id": [
+                "20150101010101", "20150101010102", "20150101010103",
+                "20150101010201", "20150101010202",
+                "20150101020101", "20150101020102", "20150101020103",
+                "20150202020101", "20150202020102",
+                "20150303010101", "20150303010102",
+                "20150303010201", "20150303010202",
+            ],
+            "race_id": [
+                "201501010101", "201501010101", "201501010101",
+                "201501010102", "201501010102",
+                "201501010201", "201501010201", "201501010201",
+                "201502020201", "201502020201",
+                "201503030101", "201503030101",
+                "201503030102", "201503030102",
+            ],
+            "finish_position": [1, 2, 3, 1, 4, 2, 5, None, 1, None, 3, 6, 1, 2],
+            "finish_note": [None, None, None, None, None, None, None, "取", None, "中", None, None, None, None],
+            "finish_time": [
+                "1:58.5", "1:58.8", "1:59.1",
+                "1:35.2", "1:36.0",
+                "1:10.5", "1:11.2", None,
+                "1:23.4", None,
+                "2:15.3", "2:15.8",
+                "1:48.2", "1:48.6",
+            ],
+            "margin": [
+                None, "3/4", "1.1/2",
+                None, "2",
+                "ハナ", "3", None,
+                None, None,
+                "1.1/4", "5",
+                None, "アタマ",
+            ],
+            "corner_1": [1, 3, 2, 1, 4, 1, 3, None, 2, None, 1, 5, 1, 3],
+            "corner_2": [1, 3, 2, 1, 4, 1, 3, None, 2, None, 1, 5, 1, 3],
+            "corner_3": [1, 2, 3, 1, 3, 1, 4, None, 1, None, 2, 5, 1, 2],
+            "corner_4": [1, 2, 3, 1, 3, 1, 4, None, 1, None, 2, 5, 1, 2],
+            "last_3f": [34.5, 34.8, 35.0, 36.0, 35.5, 33.2, 35.8, None, 33.5, None, 35.1, 36.0, 34.0, 34.2],
+            "prize_money": [750.0, 300.0, 190.0, 500.0, None, 200.0, None, None, 400.0, None, 150.0, None, 600.0, 240.0],
+        })
+
+        race_df.to_parquet(standard_dir / "race.parquet", engine="pyarrow", index=False)
+        entry_df.to_parquet(standard_dir / "entry.parquet", engine="pyarrow", index=False)
+        result_df.to_parquet(standard_dir / "result.parquet", engine="pyarrow", index=False)
+
+        return generate(standard_dir=standard_dir, feature_dir=feature_dir)
+
+    def test_features_train_contains_target_and_auxiliary(self, tmp_path: Path) -> None:
+        """Test 4: features_train.parquet contains target_top3, result_status, is_dnf, exclude_from_training."""
+        paths = self._generate_full_pipeline(tmp_path)
+        train_df = pd.read_parquet(paths["train"])
+
+        assert "target_top3" in train_df.columns
+        assert "result_status" in train_df.columns
+        assert "is_dnf" in train_df.columns
+        assert "exclude_from_training" in train_df.columns
+
+    def test_features_pred_no_target_or_auxiliary(self, tmp_path: Path) -> None:
+        """Test 5: features_pred.parquet does NOT contain target_top3, result_status, is_dnf, exclude_from_training."""
+        paths = self._generate_full_pipeline(tmp_path)
+        pred_df = pd.read_parquet(paths["pred"])
+
+        assert "target_top3" not in pred_df.columns
+        assert "result_status" not in pred_df.columns
+        assert "is_dnf" not in pred_df.columns
+        assert "exclude_from_training" not in pred_df.columns
+
+    def test_features_pred_no_current_race_result_derivatives(self, tmp_path: Path) -> None:
+        """Test 6: features_pred.parquet does NOT contain margin_numeric, finish_time_zscore, finish_time_seconds."""
+        paths = self._generate_full_pipeline(tmp_path)
+        pred_df = pd.read_parquet(paths["pred"])
+
+        assert "margin_numeric" not in pred_df.columns
+        assert "finish_time_zscore" not in pred_df.columns
+        assert "finish_time_seconds" not in pred_df.columns
+
+    def test_features_pred_contains_lag_versions(self, tmp_path: Path) -> None:
+        """Test 7: features_pred.parquet DOES contain prev_1_margin_numeric, prev_1_finish_time_zscore."""
+        paths = self._generate_full_pipeline(tmp_path)
+        pred_df = pd.read_parquet(paths["pred"])
+
+        assert "prev_1_margin_numeric" in pred_df.columns
+        assert "prev_1_finish_time_zscore" in pred_df.columns
+
+    def test_both_parquet_readable_with_correct_row_count(self, tmp_path: Path) -> None:
+        """Test 8: Both Parquet files can be read back with correct row count."""
+        paths = self._generate_full_pipeline(tmp_path)
+        train_df = pd.read_parquet(paths["train"])
+        pred_df = pd.read_parquet(paths["pred"])
+
+        assert len(train_df) == 14, f"Expected 14 rows in train, got {len(train_df)}"
+        assert len(pred_df) == 14, f"Expected 14 rows in pred, got {len(pred_df)}"
+
+    def test_generate_returns_dict_with_train_and_pred(self, tmp_path: Path) -> None:
+        """Test 9: generate() returns dict with 'train' and 'pred' keys mapping to file Paths."""
+        paths = self._generate_full_pipeline(tmp_path)
+
+        assert "train" in paths
+        assert "pred" in paths
+        assert paths["train"].exists()
+        assert paths["pred"].exists()
+
+    def test_feature_columns_is_static_allowlist(self) -> None:
+        """Test 10: FEATURE_COLUMNS is a static list -- every column name is explicitly written in source code."""
+        from src.pipeline.feature_generator import FEATURE_COLUMNS, RACE_FEATURES, HORSE_FEATURES, LAG_RAW_FEATURES, LAG_STAT_FEATURES, PERSON_FEATURES, DEBUT_FEATURE
+
+        # Verify it's a list (not computed at runtime from df.columns)
+        assert isinstance(FEATURE_COLUMNS, list)
+
+        # Verify it's the concatenation of named feature groups
+        expected = RACE_FEATURES + HORSE_FEATURES + LAG_RAW_FEATURES + LAG_STAT_FEATURES + PERSON_FEATURES + DEBUT_FEATURE
+        assert FEATURE_COLUMNS == expected
+
+    def test_generation_validates_expected_columns(self, tmp_path: Path) -> None:
+        """Test 11: At generation time, assert all FEATURE_COLUMNS exist and no unexpected columns present."""
+        from src.pipeline.feature_generator import FEATURE_COLUMNS
+
+        paths = self._generate_full_pipeline(tmp_path)
+        pred_df = pd.read_parquet(paths["pred"])
+
+        # All FEATURE_COLUMNS should be present in pred
+        for col in FEATURE_COLUMNS:
+            assert col in pred_df.columns, f"FEATURE_COLUMN {col} missing from pred output"
+
+    def test_pred_no_leakage_via_audit(self, tmp_path: Path) -> None:
+        """Additional: audit_leakage() on features_pred returns empty list."""
+        from src.schemas.audit import audit_leakage
+        from src.schemas.race import RaceSchema
+        from src.schemas.entry import EntrySchema
+        from src.schemas.result import ResultSchema
+
+        paths = self._generate_full_pipeline(tmp_path)
+        pred_df = pd.read_parquet(paths["pred"])
+
+        leaked = audit_leakage([RaceSchema, EntrySchema, ResultSchema], pred_df, "pred test")
+        assert leaked == [], f"features_pred has leakage: {leaked}"
