@@ -425,10 +425,11 @@ def _compute_person_stats(
 
     Implements sum-based race-level aggregation: for each (person, race_id),
     counts top-3 finishes, wins, and valid starts across all runners.
-    Then computes rolling rates using only prior valid starts that satisfy
+    Then computes rolling rates using only prior race entries that satisfy
     BOTH:
     - Within 365 days of current race date
-    - Among the most recent 100 prior valid starts
+    - Among the most recent 100 prior race entries (each entry may contain
+      multiple valid starts for trainers with multiple runners per race)
 
     Args:
         df: DataFrame with person_col, race_id, race_date, finish_position,
