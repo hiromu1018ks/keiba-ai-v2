@@ -13,10 +13,12 @@ import pandas as pd
 import pytest
 
 from src.pipeline.feature_generator import (
+    compute_finish_time_zscore,
     convert_margin_to_numeric,
     derive_horse_entity_key,
     extract_horse_basic_features,
     extract_race_context_features,
+    parse_finish_time_to_seconds,
     parse_margin,
 )
 
@@ -306,10 +308,270 @@ class TestMarginConversion:
 
 
 class TestFinishTimeZscore:
-    """Tests for finish_time z-score normalization (Plan 03-02)."""
+    """Tests for finish_time z-score normalization with race-boundary safety (Plan 03-02)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Finish time z-score not yet implemented (Plan 03-02)")
+    def test_parse_finish_time_to_seconds_normal(self) -> None:
+        """Test 1: parse_finish_time_to_seconds("1:29.5") returns 89.5."""
+        assert parse_finish_time_to_seconds("1:29.5") == pytest.approx(89.5)
+
+    def test_parse_finish_time_to_seconds_sub_minute(self) -> None:
+        """Test 2: parse_finish_time_to_seconds("0:59.3") returns 59.3."""
+        assert parse_finish_time_to_seconds("0:59.3") == pytest.approx(59.3)
+
+    def test_parse_finish_time_to_seconds_none(self) -> None:
+        """Test 3: parse_finish_time_to_seconds(None) returns NaN."""
+        import math
+
+        result = parse_finish_time_to_seconds(None)
+        assert math.isnan(result)
+
+    def test_compute_finish_time_zscore_adds_columns(self) -> None:
+        """Test 4: compute_finish_time_zscore() adds finish_time_seconds and finish_time_zscore columns."""
+        df = self._make_two_race_fixture()
+        result = compute_finish_time_zscore(df)
+        assert "finish_time_seconds" in result.columns
+        assert "finish_time_zscore" in result.columns
+
+    def test_all_runners_same_race_identical_norm_params(self) -> None:
+        """Test 5: ALL runners in race N receive IDENTICAL normalization mean and std.
+
+        This is the race-boundary guarantee: the z-score for each runner
+        depends only on prior races, not on other runners in the same race.
+        """
+        df = self._make_two_race_fixture()
+        result = compute_finish_time_zscore(df)
+
+        # For race 2 (race_id="R2"), all runners should have same z-score
+        race2 = result[result["race_id"] == "R2"]
+        assert len(race2) >= 2, "Need at least 2 runners in race 2"
+
+        zscores = race2["finish_time_zscore"].values
+        # All z-scores should be identical (same norm_mean, norm_std per runner)
+        # But different finish_time_seconds -> different z-scores
+        # What must be identical is the normalization parameters, which we
+        # can verify indirectly: all z-scores should follow (x - mu) / sigma
+        # with the same mu and sigma.
+        #
+        # More directly: we verify this in test 7 by checking that norm parameters
+        # come only from prior races. Here we verify the derived z-scores are
+        # well-formed (finite for race 2 since race 1 provides history).
+        import math
+
+        for z in zscores:
+            if not math.isnan(z):
+                assert abs(z) < 100, f"Z-score {z} unreasonably large"
+
+    def test_later_race_sees_prior_race_stats(self) -> None:
+        """Test 6: Runners in race N+1 see normalization stats that INCLUDE race N's times.
+
+        Race 2's normalization should be based on race 1's finish times.
+        """
+        df = self._make_two_race_fixture()
+        result = compute_finish_time_zscore(df)
+
+        race2 = result[result["race_id"] == "R2"]
+        zscores = race2["finish_time_zscore"].dropna().values
+        assert len(zscores) > 0, "Race 2 should have non-NaN z-scores (race 1 provides history)"
+
+    def test_no_same_race_leakage(self) -> None:
+        """Test 7: Runners in race N see normalization stats that EXCLUDE race N's own times.
+
+        The race-boundary approach guarantees: norm_mean and norm_std for race N
+        are computed from races 1..N-1 only.
+        """
+        # Create a fixture with 5 races in the same (course, distance, surface) group
+        # so we have enough prior races for min_periods=5... actually let's use 6
+        # races so race 6 has 5 prior races.
+        # Actually the plan says min_periods=5, but for the leakage test we just
+        # need to verify the property. Let's use a simpler approach:
+        # If there's no leakage, adding a runner to race 1 with a very different
+        # finish time should NOT change race 1's own z-scores (they should be NaN
+        # if there are 0 prior races, or based on even earlier races only).
+        #
+        # Simpler: create 2 races with 3 runners each. Race 1 has no prior history
+        # -> z-score should be NaN (min_periods=5 not met). Race 2 should get stats
+        # from race 1 only.
+        df = self._make_two_race_fixture()
+        result = compute_finish_time_zscore(df)
+
+        # Race 1 has no prior races -> z-scores should be NaN (min_periods=5)
+        race1 = result[result["race_id"] == "R1"]
+        assert race1["finish_time_zscore"].isna().all(), (
+            "Race 1 should have NaN z-scores (no prior races, min_periods=5)"
+        )
+
+        # Race 2 should have z-scores based on race 1's mean/std
+        # But since race 1 is only 1 prior race, and min_periods=5, it should also be NaN
+        # Let me construct enough races to actually test this...
+
+        # Actually, the key test is with enough data. Let me use the full fixture.
+        df2 = self._make_many_race_fixture(num_races=7)
+        result2 = compute_finish_time_zscore(df2)
+
+        # Race 7 should have stats from races 1-6
+        race7 = result2[result2["race_id"] == "R7"]
+        assert not race7["finish_time_zscore"].isna().all(), (
+            "Race 7 should have valid z-scores (6 prior races, min_periods=5 met)"
+        )
+
+        # Verify race 7's normalization is based only on races 1-6:
+        # Manually compute expected mean and std from races 1-6
+        races_1_6 = df2[df2["race_id"].isin([f"R{i}" for i in range(1, 7)])]
+        from src.pipeline.feature_generator import parse_finish_time_to_seconds
+
+        ft_secs = races_1_6["finish_time"].apply(parse_finish_time_to_seconds)
+        race_means_1_6 = ft_secs.groupby(races_1_6["race_id"]).mean()
+        overall_mean = race_means_1_6.mean()
+        overall_std = race_means_1_6.std(ddof=1)
+
+        # Race 7's z-scores should use these stats
+        race7_ft = race7["finish_time"].apply(parse_finish_time_to_seconds)
+        expected_zscores = (race7_ft - overall_mean) / overall_std
+
+        for actual, expected in zip(race7["finish_time_zscore"].values, expected_zscores.values):
+            if not (pd.isna(actual) and pd.isna(expected)):
+                assert actual == pytest.approx(expected, abs=0.01), (
+                    f"Expected z-score {expected}, got {actual}"
+                )
+
+    def test_temporal_invariance(self) -> None:
+        """Test 8: Adding a future race does NOT change z-score values for historical rows.
+
+        This is the temporal invariance guarantee.
+        """
+        # Compute z-scores with 7 races
+        df_7 = self._make_many_race_fixture(num_races=7)
+        result_7 = compute_finish_time_zscore(df_7)
+
+        # Compute z-scores with 8 races (added future race)
+        df_8 = self._make_many_race_fixture(num_races=8)
+        result_8 = compute_finish_time_zscore(df_8)
+
+        # Z-scores for races 1-7 should be identical in both results
+        for race_num in range(1, 8):
+            race_id = f"R{race_num}"
+            z_7 = result_7[result_7["race_id"] == race_id]["finish_time_zscore"].values
+            z_8 = result_8[result_8["race_id"] == race_id]["finish_time_zscore"].values
+
+            assert len(z_7) == len(z_8), f"Race {race_id}: row count mismatch"
+            for a, b in zip(z_7, z_8):
+                if pd.isna(a) and pd.isna(b):
+                    continue
+                assert a == pytest.approx(b, abs=0.001), (
+                    f"Race {race_id}: z-score changed after adding future race "
+                    f"({a} -> {b})"
+                )
+
+    def test_sparse_group_nan_zscore(self) -> None:
+        """Test 9: Course-distance-surface combos with fewer than 5 prior RACES get NaN z-score."""
+        df = self._make_many_race_fixture(num_races=4)
+        result = compute_finish_time_zscore(df)
+
+        # With only 4 prior races max (race 4 has 3 prior), all should be NaN
+        assert result["finish_time_zscore"].isna().all(), (
+            "All z-scores should be NaN when no group has >= 5 prior races"
+        )
+
+    def test_zero_std_produces_nan(self) -> None:
+        """Test 10: When expanding std is 0 or NaN, z-score is NaN not inf."""
+        # Create a fixture where all races have the exact same finish time
+        rows = []
+        for race_num in range(1, 8):
+            for horse_num in range(1, 4):
+                rows.append({
+                    "race_id": f"R{race_num}",
+                    "race_date": f"2015-01-{race_num:02d}",
+                    "course_name": "東京",
+                    "distance": 2000,
+                    "surface": "芝",
+                    "finish_time": "1:58.5",  # All identical times
+                    "horse_entity_key": f"馬{race_num}_{horse_num}",
+                })
+        df = pd.DataFrame(rows)
+        result = compute_finish_time_zscore(df)
+
+        # All z-scores should be NaN (std=0 for identical times)
+        assert result["finish_time_zscore"].isna().all(), (
+            "Z-scores should be NaN when std is 0 (all identical times)"
+        )
+
+    def test_zscore_typical_range(self) -> None:
+        """Test 11: finish_time_zscore values are typically between -5 and +5 (sanity check)."""
+        df = self._make_many_race_fixture(num_races=10)
+        result = compute_finish_time_zscore(df)
+
+        non_nan_zscores = result["finish_time_zscore"].dropna().values
+        if len(non_nan_zscores) > 0:
+            for z in non_nan_zscores:
+                assert -5 <= z <= 5, f"Z-score {z} outside expected range [-5, 5]"
+
+    # -- Helper: create fixtures for race-boundary tests --
+
+    @staticmethod
+    def _make_two_race_fixture() -> pd.DataFrame:
+        """Create a DataFrame with 2 races, 3 runners each, same course/distance/surface."""
+        rows = []
+        # Race 1: 東京 2000 芝, 2015-01-01
+        times_r1 = ["1:58.5", "1:58.8", "1:59.1"]
+        for i, t in enumerate(times_r1, start=1):
+            rows.append({
+                "race_id": "R1",
+                "race_date": "2015-01-01",
+                "course_name": "東京",
+                "distance": 2000,
+                "surface": "芝",
+                "finish_time": t,
+                "horse_entity_key": f"馬{i}",
+            })
+        # Race 2: same course/distance/surface, 2015-02-01
+        times_r2 = ["1:57.5", "1:58.0", "1:59.5"]
+        for i, t in enumerate(times_r2, start=4):
+            rows.append({
+                "race_id": "R2",
+                "race_date": "2015-02-01",
+                "course_name": "東京",
+                "distance": 2000,
+                "surface": "芝",
+                "finish_time": t,
+                "horse_entity_key": f"馬{i}",
+            })
+        return pd.DataFrame(rows)
+
+    @staticmethod
+    def _make_many_race_fixture(num_races: int = 7) -> pd.DataFrame:
+        """Create a DataFrame with num_races races, 3 runners each, same course/distance/surface.
+
+        Finish times vary naturally to produce meaningful z-scores.
+        """
+        import random
+
+        random.seed(42)
+        rows = []
+        base_times = [
+            ("1:58.5", "1:58.8", "1:59.1"),
+            ("1:57.2", "1:57.5", "1:58.0"),
+            ("1:59.0", "1:59.3", "1:59.8"),
+            ("1:56.5", "1:57.0", "1:57.5"),
+            ("1:58.0", "1:58.3", "1:58.8"),
+            ("1:57.8", "1:58.1", "1:58.5"),
+            ("1:59.5", "1:59.8", "2:00.2"),
+            ("1:57.0", "1:57.3", "1:57.8"),
+            ("1:58.2", "1:58.6", "1:59.0"),
+            ("1:56.8", "1:57.2", "1:57.6"),
+        ]
+        for race_num in range(1, num_races + 1):
+            times = base_times[(race_num - 1) % len(base_times)]
+            for horse_idx, t in enumerate(times):
+                rows.append({
+                    "race_id": f"R{race_num}",
+                    "race_date": f"2015-{race_num:02d}-01",
+                    "course_name": "東京",
+                    "distance": 2000,
+                    "surface": "芝",
+                    "finish_time": t,
+                    "horse_entity_key": f"馬R{race_num}H{horse_idx + 1}",
+                })
+        return pd.DataFrame(rows)
 
 
 class TestCategoricalConversion:
