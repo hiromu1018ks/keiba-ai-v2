@@ -100,17 +100,23 @@ Plans:
 
 **Plans**: 5 plans (Cycle 3 revision -- root cause fixes for all 8 HIGH review concerns)
 Plans:
-**Wave 1** (parallel)
+**Wave 1**
 
 - [ ] 03-01: Module skeleton + collision-safe horse_entity_key + inner-join merge + race context + horse basic features (DATA-03)
+
+**Wave 2** *(blocked on 03-01)*
+
 - [ ] 03-02: Margin conversion + race-boundary finish_time z-score (DATA-03)
 
-**Wave 2** *(blocked on Wave 1)*
+**Wave 3** *(blocked on 03-02)*
 
 - [ ] 03-03: Valid-start-filtered lag features (45 cols) + sum-based race-level jockey/trainer stats with exact D-08 intersection (DATA-03)
+
+**Wave 4** *(blocked on 03-03)*
+
 - [ ] 03-04: Target variable (6 result_status categories) + debut flag (DATA-03)
 
-**Wave 3** *(blocked on Wave 2)*
+**Wave 5** *(blocked on 03-04)*
 
 - [ ] 03-05: Static feature allowlist + categorical conversion + temporal invariance tests + leakage audit + Parquet output (DATA-03)
 
