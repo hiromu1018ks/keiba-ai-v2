@@ -422,7 +422,7 @@ def compute_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     # Set values from valid-start rows
     df_indexed = df.reset_index(drop=True)
     for col in lag_cols:
-        df_indexed.loc[lag_only["_orig_idx"].values, col] = lag_only[col].values
+        df_indexed.loc[lag_only["_orig_idx"].values, col] = lag_only[col].values.astype(float)
 
     return df_indexed
 
