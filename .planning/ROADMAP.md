@@ -132,13 +132,24 @@ Plans:
   3. Duplicate page fetches are prevented: already-downloaded HTML is reused without re-requesting
   4. Rate limiting is enforced so the scraper does not trigger anti-bot blocks
 
-**Plans**: TBD
-
+**Plans**: 5 plans
 Plans:
+**Wave 1**
 
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01: Package skeleton + dependency installation (SCRP-01)
+
+**Wave 2** *(04-02 and 04-03 run in parallel)*
+
+- [ ] 04-02: Playwright fetcher + dedup + rate limiting + calendar enumeration + tests (SCRP-01, SCRP-02, SCRP-05)
+- [ ] 04-03: BS4+lxml parser + race flags + helper functions + tests (SCRP-01, SCRP-03)
+
+**Wave 3** *(blocked on 04-02 and 04-03)*
+
+- [ ] 04-04: Normalizer (dict -> DataFrame -> Parquet) + obstacle filter + audit + tests (SCRP-01, SCRP-03)
+
+**Wave 4** *(blocked on 04-04)*
+
+- [ ] 04-05: Package integration + full test suite validation (SCRP-01, SCRP-02, SCRP-03, SCRP-05)
 
 ### Phase 5: Trifecta Odds Scraping
 
@@ -265,7 +276,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
 | 3. Feature Engineering | 5/5 | Complete    | 2026-06-12 |
-| 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
+| 4. Scraping Infrastructure & Race Data | 0/5 | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
