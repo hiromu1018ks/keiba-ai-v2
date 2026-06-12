@@ -24,6 +24,7 @@ Threat model mitigations:
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -46,6 +47,113 @@ CATEGORICAL_COLUMNS = [
 ]
 
 SORT_KEY = ["horse_entity_key", "race_date", "race_id"]
+
+# Margin text-to-numeric mapping (Plan 03-02)
+# Source: JRA official margin definitions, RESEARCH.md Code Examples
+# Values in 馬身 (horse length) units
+MARGIN_MAP: dict[str, float] = {
+    # Text margins (body parts)
+    "ハナ": 0.02,      # nose ~20cm
+    "アタマ": 0.05,    # head ~40cm
+    "クビ": 0.10,      # neck ~60-80cm
+    # Fractional margins (in 馬身/horse lengths)
+    "3/4": 0.75,
+    "1/2": 0.50,
+    "1.1/4": 1.25,
+    "1.1/2": 1.50,
+    "1.3/4": 1.75,
+    "2.1/2": 2.50,
+    "3.1/2": 3.50,
+    # Integer margins (in 馬身)
+    "1": 1.0,
+    "2": 2.0,
+    "3": 3.0,
+    "4": 4.0,
+    "5": 5.0,
+    "6": 6.0,
+    "7": 7.0,
+    "8": 8.0,
+    "9": 9.0,
+    "10": 10.0,
+    # Special
+    "大": 15.0,        # 大差 (large margin, >10 lengths)
+    "同着": 0.0,       # dead heat
+}
+
+# Compound margin components: used for parsing "1.1/4+クビ" style values
+# These are the additive parts that appear after "+"
+COMPONENT_MAP: dict[str, float] = {
+    "ハナ": 0.02,
+    "クビ": 0.10,
+    "1/2": 0.50,
+}
+
+
+def parse_margin(margin_str: str | None) -> float | None:
+    """Convert margin text to numeric value in 馬身 (horse length) units.
+
+    Handles:
+    - Direct MARGIN_MAP lookup (e.g. "クビ" -> 0.10)
+    - Compound margins split on "+" (e.g. "1.1/4+クビ" -> 1.35)
+    - None/NaN/empty string -> None (graceful degradation)
+
+    Args:
+        margin_str: Margin text from result table, or None.
+
+    Returns:
+        Numeric margin value in 馬身 units, or None if input is
+        None/NaN/empty/unrecognized.
+    """
+    if margin_str is None or (isinstance(margin_str, float) and np.isnan(margin_str)):
+        return None
+
+    # Strip whitespace (including full-width spaces common in Japanese data)
+    margin_str = str(margin_str).strip()
+
+    if margin_str == "":
+        return None
+
+    # Direct lookup first (most common case)
+    if margin_str in MARGIN_MAP:
+        return MARGIN_MAP[margin_str]
+
+    # Compound parsing: split on "+" and sum components
+    if "+" in margin_str:
+        parts = margin_str.split("+")
+        total = 0.0
+        for part in parts:
+            part = part.strip()
+            if part in MARGIN_MAP:
+                total += MARGIN_MAP[part]
+            elif part in COMPONENT_MAP:
+                total += COMPONENT_MAP[part]
+            else:
+                return None  # Unknown component -> graceful degradation
+        return total
+
+    return None  # Unknown format -> graceful degradation
+
+
+def convert_margin_to_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    """Add margin_numeric column to DataFrame by parsing margin text values.
+
+    Applies parse_margin() to the "margin" column. Empty strings are treated
+    as None. The original "margin" column is preserved.
+
+    Args:
+        df: Merged DataFrame with a "margin" column containing text values.
+
+    Returns:
+        DataFrame with "margin_numeric" column added.
+    """
+    df = df.copy()
+
+    # Treat empty string as None before parsing
+    margin_col = df["margin"].replace("", None)
+
+    df["margin_numeric"] = margin_col.apply(parse_margin)
+
+    return df
 
 
 def derive_horse_entity_key(df: pd.DataFrame) -> pd.DataFrame:
@@ -263,8 +371,11 @@ def generate(
     horse_features = extract_horse_basic_features(df)
     logger.info(f"Horse basic features: {len(horse_features.columns)} columns")
 
-    # Steps 4-10: Placeholders for Plans 02-05
-    # Plan 03-02: margin numeric conversion
+    # Step 4: Margin numeric conversion (Plan 03-02)
+    df = convert_margin_to_numeric(df)
+    logger.info("Margin numeric conversion complete")
+
+    # Steps 5-10: Placeholders for Plans 02-05
     # Plan 03-02: finish_time z-score normalization
     # Plan 03-03: lag features for recent runs (3-race, 5-race)
     # Plan 03-02: jockey/trainer rolling statistics
