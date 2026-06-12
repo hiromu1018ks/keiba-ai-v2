@@ -270,6 +270,105 @@ def compute_finish_time_zscore(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def compute_lag_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute lag features for recent runs with valid-start filtering.
+
+    Generates lag features encoding each horse's recent performance history.
+    Only VALID-START rows are used for lag computation -- scratched (取) and
+    removed (除) entries are excluded before shifting, then merged back with
+    all-NaN lags.
+
+    A "valid start" is any entry where the horse actually ran:
+    - Normal finishes (finish_position is not NA, finish_note is None)
+    - DNF: 中 (did not finish -- started but didn't complete)
+    - Disqualified: 失 (started, disqualified)
+    - Demoted: 降 (started, demoted)
+    Excluded: 取 (scratched -- never started), 除 (removed -- never started)
+
+    Lag features computed:
+    - 25 raw lag columns: prev_{1..5}_{metric} for metrics:
+      finish_position, last_3f, corner_4, finish_time_zscore, margin_numeric
+    - 10 prev3 stat columns: prev3_{metric}_mean, prev3_{metric}_std
+    - 10 prev5 stat columns: prev5_{metric}_mean, prev5_{metric}_std
+
+    Total: 45 lag feature columns.
+
+    Args:
+        df: DataFrame with columns: horse_entity_key, race_date, race_id,
+            finish_position, finish_note, last_3f, corner_4,
+            finish_time_zscore, margin_numeric.
+
+    Returns:
+        DataFrame with 45 lag feature columns added.
+    """
+    df = df.copy()
+
+    # Step 1: Identify valid starts (取 and 除 excluded)
+    is_valid_start = ~df["finish_note"].isin(["取", "除"])
+
+    # Step 2: Filter to valid-start rows for lag computation
+    valid_df = df[is_valid_start].copy()
+
+    # Sort deterministically
+    valid_df = valid_df.sort_values(SORT_KEY).reset_index(drop=False)
+    # Preserve original index for merge-back
+    valid_df = valid_df.rename(columns={"index": "_orig_idx"})
+
+    # Step 3: Compute lag features on valid-start rows
+    lag_metrics = ["finish_position", "last_3f", "corner_4", "finish_time_zscore", "margin_numeric"]
+
+    for metric in lag_metrics:
+        for lag in range(1, 6):
+            col_name = f"prev_{lag}_{metric}"
+            valid_df[col_name] = valid_df.groupby("horse_entity_key")[metric].shift(lag)
+
+    # Step 3b: Compute rolling statistics on prev_1 values
+    for metric in lag_metrics:
+        prev1_col = f"prev_1_{metric}"
+        grouped = valid_df.groupby("horse_entity_key")[prev1_col]
+
+        # prev3: rolling window of 3, min_periods=1 for mean, min_periods=2 for std
+        valid_df[f"prev3_{metric}_mean"] = grouped.transform(
+            lambda s: s.rolling(3, min_periods=1).mean()
+        )
+        valid_df[f"prev3_{metric}_std"] = grouped.transform(
+            lambda s: s.rolling(3, min_periods=2).std()
+        )
+
+        # prev5: rolling window of 5, min_periods=1 for mean, min_periods=2 for std
+        valid_df[f"prev5_{metric}_mean"] = grouped.transform(
+            lambda s: s.rolling(5, min_periods=1).mean()
+        )
+        valid_df[f"prev5_{metric}_std"] = grouped.transform(
+            lambda s: s.rolling(5, min_periods=2).std()
+        )
+
+    # Step 4: Select only the lag+stat columns plus merge key
+    lag_cols = []
+    for metric in lag_metrics:
+        for lag in range(1, 6):
+            lag_cols.append(f"prev_{lag}_{metric}")
+        lag_cols.append(f"prev3_{metric}_mean")
+        lag_cols.append(f"prev3_{metric}_std")
+        lag_cols.append(f"prev5_{metric}_mean")
+        lag_cols.append(f"prev5_{metric}_std")
+
+    merge_cols = lag_cols + ["_orig_idx"]
+    lag_only = valid_df[merge_cols].copy()
+
+    # Step 5: Left-merge back to the full df using original index
+    # Initialize all lag columns as NaN on the full df
+    for col in lag_cols:
+        df[col] = np.nan
+
+    # Set values from valid-start rows
+    df_indexed = df.reset_index(drop=True)
+    for col in lag_cols:
+        df_indexed.loc[lag_only["_orig_idx"].values, col] = lag_only[col].values
+
+    return df_indexed
+
+
 def derive_horse_entity_key(df: pd.DataFrame) -> pd.DataFrame:
     """Derive a collision-safe horse entity key from horse_name and birth_year_proxy.
 
@@ -493,9 +592,12 @@ def generate(
     df = compute_finish_time_zscore(df)
     logger.info("Finish time z-score normalization complete")
 
-    # Steps 6-10: Placeholders for Plans 02-05
-    # Plan 03-03: lag features for recent runs (3-race, 5-race)
-    # Plan 03-02: jockey/trainer rolling statistics
+    # Step 6: Lag features for recent runs (Plan 03-03)
+    df = compute_lag_features(df)
+    logger.info("Lag feature computation complete")
+
+    # Steps 7-10: Placeholders for Plans 03-03 to 03-05
+    # Plan 03-03: jockey/trainer rolling statistics
     # Plan 03-03: debut flag for first-time starters
     # Plan 03-04: target_top3 generation
     # Plan 03-05: categorical CategoricalDtype conversion
