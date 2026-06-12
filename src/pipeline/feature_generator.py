@@ -359,6 +359,7 @@ def compute_lag_features(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with 45 lag feature columns added.
     """
+    df = df.reset_index(drop=True)  # Ensure contiguous RangeIndex for merge-back
     df = df.copy()
 
     # Step 1: Identify valid starts (取 and 除 excluded)
