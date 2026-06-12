@@ -13,13 +13,9 @@ import pandas as pd
 import pytest
 
 from src.pipeline.feature_generator import (
-    CATEGORICAL_COLUMNS,
-    SORT_KEY,
     derive_horse_entity_key,
     extract_horse_basic_features,
     extract_race_context_features,
-    generate,
-    load_and_merge,
 )
 
 
