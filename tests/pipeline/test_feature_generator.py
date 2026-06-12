@@ -13,9 +13,11 @@ import pandas as pd
 import pytest
 
 from src.pipeline.feature_generator import (
+    convert_margin_to_numeric,
     derive_horse_entity_key,
     extract_horse_basic_features,
     extract_race_context_features,
+    parse_margin,
 )
 
 
@@ -228,10 +230,79 @@ class TestTargetVariable:
 
 
 class TestMarginConversion:
-    """Tests for margin numeric conversion (Plan 03-02)."""
+    """Tests for margin text-to-numeric conversion (Plan 03-02)."""
 
-    def test_not_yet_implemented(self) -> None:
-        pytest.skip("Margin conversion not yet implemented (Plan 03-02)")
+    def test_parse_margin_hana(self) -> None:
+        """Test 1: parse_margin("ハナ") returns 0.02."""
+        assert parse_margin("ハナ") == 0.02
+
+    def test_parse_margin_kubi(self) -> None:
+        """Test 2: parse_margin("クビ") returns 0.10."""
+        assert parse_margin("クビ") == 0.10
+
+    def test_parse_margin_fraction(self) -> None:
+        """Test 3: parse_margin("1.1/4") returns 1.25."""
+        assert parse_margin("1.1/4") == 1.25
+
+    def test_parse_margin_oo(self) -> None:
+        """Test 4: parse_margin("大") returns 15.0."""
+        assert parse_margin("大") == 15.0
+
+    def test_parse_margin_dead_heat(self) -> None:
+        """Test 5: parse_margin("同着") returns 0.0."""
+        assert parse_margin("同着") == 0.0
+
+    def test_parse_margin_compound(self) -> None:
+        """Test 6: parse_margin("1.1/4+クビ") returns 1.35 (compound)."""
+        assert parse_margin("1.1/4+クビ") == pytest.approx(1.35)
+
+    def test_parse_margin_compound_with_hana(self) -> None:
+        """Test 7: parse_margin("2+ハナ") returns 2.02 (compound)."""
+        assert parse_margin("2+ハナ") == pytest.approx(2.02)
+
+    def test_parse_margin_none(self) -> None:
+        """Test 8: parse_margin(None) returns None."""
+        assert parse_margin(None) is None
+
+    def test_parse_margin_compound_both_component_map(self) -> None:
+        """Test 9: parse_margin("1/2+1/2") returns 1.0 (compound both in COMPONENT_MAP)."""
+        assert parse_margin("1/2+1/2") == pytest.approx(1.0)
+
+    def test_parse_margin_empty_string(self) -> None:
+        """Test 10: parse_margin("") (empty string) returns None."""
+        assert parse_margin("") is None
+
+    def test_convert_margin_to_numeric_adds_column(
+        self, sample_feature_merged_df: pd.DataFrame
+    ) -> None:
+        """Test 11: convert_margin_to_numeric() adds margin_numeric column to DataFrame."""
+        result = convert_margin_to_numeric(sample_feature_merged_df)
+        assert "margin_numeric" in result.columns
+
+        # Verify specific values from fixture data
+        # Row with margin="3/4" -> 0.75
+        row_3_4 = result[result["margin"] == "3/4"]
+        assert len(row_3_4) > 0
+        assert row_3_4["margin_numeric"].iloc[0] == pytest.approx(0.75)
+
+        # Row with margin="1.1/2" -> 1.50
+        row_1_1_2 = result[result["margin"] == "1.1/2"]
+        assert len(row_1_1_2) > 0
+        assert row_1_1_2["margin_numeric"].iloc[0] == pytest.approx(1.50)
+
+        # Row with margin=None -> margin_numeric=None
+        row_none = result[result["margin"].isna()]
+        assert len(row_none) > 0
+        assert row_none["margin_numeric"].isna().all()
+
+    def test_parse_margin_unicode_whitespace(self) -> None:
+        """Test 12: parse_margin handles whitespace gracefully."""
+        # Trailing space should still match after strip
+        assert parse_margin("ハナ ") == 0.02
+        # Full-width space (common in Japanese data)
+        assert parse_margin("ハナ　") == 0.02
+        # Unknown value returns None, no crash
+        assert parse_margin("未知の値") is None
 
 
 class TestFinishTimeZscore:
