@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 3 context gathered
-last_updated: "2026-06-12T03:45:58.633Z"
-last_activity: 2026-06-12 -- Phase 03 planning complete
+last_updated: "2026-06-12T06:45:08.548Z"
+last_activity: 2026-06-12 -- Phase 03 execution started
 progress:
   total_phases: 10
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 13
+  completed_plans: 9
   percent: 20
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 02 — kaggle-data-pipeline
+**Current focus:** Phase 03 — feature-engineering
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 03 (feature-engineering) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-12 -- Phase 03 planning complete
+Last activity: 2026-06-12 -- Phase 03 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P01 | 240s | 1 tasks | 4 files |
 | Phase 02 P02 | 649 | 2 tasks | 3 files |
 | Phase 02 P03 | 2253 | 2 tasks | 7 files |
+| Phase 03 P01 | 716 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Multi-mapped flag columns coalesced: 20 CSV flags become 13 unique schema fields
 - [Phase ?]: Optional[bool] and Optional[int] stored as object dtype in Parquet; dtype compatibility accepts object for both
 - [Phase ?]: 7 unmapped race flag fields added as None columns; Kaggle CSV lacks corresponding flag columns
+- [Phase ?]: horse_entity_key uses birth_year_proxy (race_year - age) for collision-safe horse identification, disambiguating 14 same-name collisions
+- [Phase ?]: Inner join on result correct (entry-result 1:1 at 311,806 rows); race_id provides globally unique ordering across courses
 
 ### Pending Todos
 
@@ -88,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-12T02:43:47.632Z
+Last session: 2026-06-12T06:45:08.545Z
 Stopped at: Phase 3 context gathered
 Resume file: .planning/phases/03-feature-engineering/03-CONTEXT.md

@@ -102,7 +102,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01: Module skeleton + collision-safe horse_entity_key + inner-join merge + race context + horse basic features (DATA-03)
+- [x] 03-01: Module skeleton + collision-safe horse_entity_key + inner-join merge + race context + horse basic features (DATA-03)
 
 **Wave 2** *(blocked on 03-01)*
 
@@ -264,7 +264,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
-| 3. Feature Engineering | 0/5 | Not started | - |
+| 3. Feature Engineering | 1/5 | In Progress|  |
 | 4. Scraping Infrastructure & Race Data | 0/? | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
