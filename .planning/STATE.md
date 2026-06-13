@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-06-13T16:47:22.256Z"
-last_activity: 2026-06-12 -- Phase 04 planning complete
+stopped_at: Phase 4 plan 04-01 complete
+last_updated: "2026-06-13T23:33:55.000Z"
+last_activity: 2026-06-13 -- Phase 04 plan 04-01 complete
 progress:
   total_phases: 10
   completed_phases: 3
-  total_plans: 13
-  completed_plans: 13
-  percent: 30
+  total_plans: 19
+  completed_plans: 14
+  percent: 32
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 03 — feature-engineering
+**Current focus:** Phase 04 — scraping-infrastructure-race-data
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-12 -- Phase 04 planning complete
+Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
+Plan: 2 of 6
+Status: Executing Phase 04
+Last activity: 2026-06-13 -- Plan 04-01 complete (import-safe src/scraper skeleton + playwright/bs4/lxml deps installed)
 
-Progress: [███░░░░░░░] 30%
+Progress: [███░░░░░░░] 32%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 13
+- Total plans completed: 14
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +47,7 @@ Progress: [███░░░░░░░] 30%
 | 01 | 5 | - | - |
 | 02 | 3 | - | - |
 | 03 | 5 | - | - |
+| 04 | 1 | - | - |
 
 **Recent Trend:**
 
@@ -62,6 +63,7 @@ Progress: [███░░░░░░░] 30%
 | Phase 03 P03 | 847 | 2 tasks | 3 files |
 | Phase 03 P04 | 465 | 2 tasks | 2 files |
 | Phase 03 P05 | 2015 | 2 tasks | 2 files |
+| Phase 04 P01 | 78 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -86,6 +88,9 @@ Recent decisions affecting current work:
 - [Phase 03]: FEATURE_COLUMNS is a static allowlist from named feature groups -- no column can silently appear in model features
 - [Phase 03]: Leakage audit uses RaceSchema + EntrySchema only; ResultSchema marks race_id as post-race
 - [Phase 03]: finish_time_zscore not temporally invariant under dataset truncation (expanding-window normalization)
+- [Phase 04 P01]: src/scraper/__init__.py ships as import-safe EMPTY marker for Plans 02-05; public re-exports added only in Plan 06 (fixes Codex Review HIGH #3)
+- [Phase 04 P01]: playwright/beautifulsoup4/lxml declared as runtime deps (not dev extra) per D-02; versions installed: playwright 1.60.0, bs4 4.15.0, lxml 6.1.1
+- [Phase 04 P01]: Chromium binary (chromium-1223 + headless shell + ffmpeg-1011) installed at ~/Library/Caches/ms-playwright/ — recorded as machine state per threat T-04-02
 
 ### Pending Todos
 
@@ -103,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-12T22:33:34.701Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-CONTEXT.md
+Last session: 2026-06-13T23:33:55.000Z
+Stopped at: Phase 4 plan 04-01 complete
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-01-SUMMARY.md
