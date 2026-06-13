@@ -44,9 +44,14 @@ BASE_URL: str = "https://db.netkeiba.com"
 # segment encodes YYYYMMDD.
 _RACE_DAY_HREF_RE = re.compile(r"/race/list/(\d{8})/?")
 
-# Regex used to locate individual race links on a race-day page. The 12-digit
-# segment is the canonical race_id (YYYYPPCCDDRR).
-_RACE_HREF_RE = re.compile(r"/race/(\d{12})/?")
+# Regex used to locate individual race links on a race-day page. Captures any
+# numeric segment (not just 12 digits) so malformed hrefs like
+# ``/race/2022010501/`` (10 digits) or ``/race/2022010501011/`` (13 digits)
+# still enter the validation branch and emit a warning via the
+# _RACE_ID_RE.fullmatch check below (T-04-03). Non-numeric segments
+# (``/race/list/``, ``/race/result/``, etc.) are intentionally NOT matched --
+# they are legitimate non-race links, not malformed race IDs.
+_RACE_HREF_RE = re.compile(r"/race/(\d+)/?")
 
 # Validation regex for race_id. Used with re.fullmatch so any non-12-digit
 # value (shorter, longer, or non-numeric) is rejected.
