@@ -10,6 +10,9 @@ dependencies = [
     "lightgbm>=4.6",
     "loguru>=0.7",
     "pyarrow>=14.0",
+    "playwright>=1.49",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
 ]
 
 [project.optional-dependencies]
