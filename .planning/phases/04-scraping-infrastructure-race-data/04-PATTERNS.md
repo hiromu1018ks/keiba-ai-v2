@@ -244,6 +244,37 @@ if out_path.exists() and out_path.stat().st_size > 0:
     return out_path
 ```
 
+**CYCLE-3 #2 — `fetch_race_html` optional `fetch_callable` param (NEW):** the
+signature is now `fetch_race_html(race_ref, session=None, raw_dir=...,
+fetch_callable=None)`. `session` is now Optional. When `session is None` and
+`fetch_callable is provided`, the injected transport is used to fetch the HTML
+(`fetch_callable(url)`) instead of `session.fetch_with_retry(url)`. This lets
+`run_scrape(live=False, fetch_html=transport)` route the transport to race
+fetching (not only enumeration), so a race NOT pre-saved to the raw path is
+fetched via the transport — and a transport returning None is handled gracefully
+(race skipped) rather than crashing with `AttributeError` on a None session. The
+live-mode session path remains the default when a session is supplied. The dedup
+short-circuit above runs BEFORE either transport is consulted:
+```python
+def fetch_race_html(race_ref, session=None, raw_dir=Path("data/raw/netkeiba"),
+                    fetch_callable=None) -> Optional[Path]:
+    # ... path derivation from race_ref.race_date (HIGH #1) ...
+    # SCRP-05 dedup short-circuit (runs before any transport)
+    if out_path.exists() and out_path.stat().st_size > 0:
+        return out_path
+    url = f"https://db.netkeiba.com/race/{race_ref.race_id}/"
+    # CYCLE-3 #2: choose the transport
+    if fetch_callable is not None:
+        html = fetch_callable(url)          # injected transport (offline mode)
+    elif session is not None:
+        html = session.fetch_with_retry(url) # live-mode default
+    else:
+        raise ValueError("fetch_race_html requires either a session or a fetch_callable")
+    if html is None or detect_block_page(html):
+        return None                          # graceful skip, NOT AttributeError
+    # ... atomic write + return out_path ...
+```
+
 **Path derivation from `RaceRef.race_date`** (Codex Review HIGH #1 — the
 month comes from the race_date, NEVER from `race_id[4:6]`):
 ```python
@@ -478,6 +509,17 @@ race_flag_* fields, nullable `boolean` is used because Kaggle mixes non-null
 `bool` and Arrow `null` flag columns; 04-06 TestSchemaCompatibility treats the
 null-only Kaggle columns as deliberate promotions (Cycle-2 #7).
 
+**CYCLE-3 #1 (corner dtype Float64, NOT Int64):** `corner_1..corner_4` are
+mapped to nullable `Float64`, NOT `Int64`. Kaggle stores them as NON-NULL Arrow
+`double` (verified via `pq.read_schema('data/standard/result.parquet')`:
+`corner_1..corner_4 -> double nullable=True`). Nullable pandas `Float64`
+serializes to Arrow `double` (`str(double) == str(double)`), so it passes 04-06's
+`test_physical_type_equality_for_non_null_kaggle_columns` (which compares
+`str(field.type)`). The Cycle-2 revision's `Int64` assignment was wrong — `Int64`
+serializes to Arrow `int64` (`str(int64) != str(double)`) and would FAIL that
+equality test for all 4 corner columns. (Corners are integer-valued passing
+positions but Kaggle stores them as `double`; `Float64` preserves them exactly.)
+
 ---
 
 ### `src/scraper/orchestrator.py` (service, file-I/O)
@@ -531,7 +573,12 @@ def run_scrape(
             # When fetch_html is injected and live=False, tests pre-save golden
             # HTML to the expected raw path so fetch_race_html's SCRP-05 dedup
             # returns the path without calling the transport.
-            path = fetch_race_html(ref, session, raw_dir) if session else _dedup_or_skip(ref, raw_dir)
+            # CYCLE-3 #2: route the injected transport to race fetching in offline mode.
+            # When fetch_html is injected and live=False, pass it as fetch_callable so a race
+            # NOT pre-saved is fetched via the transport (transport-None -> race skipped),
+            # not by dereferencing a None session.
+            path = fetch_race_html(ref, session=session, raw_dir=raw_dir,
+                                   fetch_callable=fetch_html if (not live and fetch_html is not None) else None)
             if path is None:
                 logger.warning(f"fetch failed for {ref.race_id}, skipping")
                 continue
