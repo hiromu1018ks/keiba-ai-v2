@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-01 complete
-last_updated: "2026-06-13T23:33:55.000Z"
-last_activity: 2026-06-13 -- Phase 04 plan 04-01 complete
+stopped_at: Phase 4 plan 04-02 complete
+last_updated: "2026-06-14T00:00:00.000Z"
+last_activity: 2026-06-14 -- Plan 04-02 complete (RaceRef model + 3-level calendar enumeration + Cycle-2 #1 URL absolutization)
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 19
-  completed_plans: 14
-  percent: 32
+  completed_plans: 15
+  percent: 79
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
-Plan: 2 of 6
-Status: Executing Phase 04
-Last activity: 2026-06-13 -- Plan 04-01 complete (import-safe src/scraper skeleton + playwright/bs4/lxml deps installed)
+Plan: 3 of 6
+Status: Ready to execute
+Last activity: 2026-06-14 -- Plan 04-02 complete (RaceRef model + 3-level calendar enumeration + Cycle-2 #1 URL absolutization)
 
-Progress: [███░░░░░░░] 32%
+Progress: [████████░░] 79%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 15
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,7 +47,7 @@ Progress: [███░░░░░░░] 32%
 | 01 | 5 | - | - |
 | 02 | 3 | - | - |
 | 03 | 5 | - | - |
-| 04 | 1 | - | - |
+| 04 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -64,6 +64,7 @@ Progress: [███░░░░░░░] 32%
 | Phase 03 P04 | 465 | 2 tasks | 2 files |
 | Phase 03 P05 | 2015 | 2 tasks | 2 files |
 | Phase 04 P01 | 78 | 2 tasks | 4 files |
+| Phase 04 P02 | 197 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,9 @@ Recent decisions affecting current work:
 - [Phase 04 P01]: src/scraper/__init__.py ships as import-safe EMPTY marker for Plans 02-05; public re-exports added only in Plan 06 (fixes Codex Review HIGH #3)
 - [Phase 04 P01]: playwright/beautifulsoup4/lxml declared as runtime deps (not dev extra) per D-02; versions installed: playwright 1.60.0, bs4 4.15.0, lxml 6.1.1
 - [Phase 04 P01]: Chromium binary (chromium-1223 + headless shell + ffmpeg-1011) installed at ~/Library/Caches/ms-playwright/ — recorded as machine state per threat T-04-02
+- [Phase 04 P02]: RaceRef is a stdlib frozen dataclass (NOT Pydantic) — lightweight typed pair; Pydantic overhead reserved for src/schemas/ standard-layer schemas
+- [Phase 04 P02]: _RACE_HREF_RE extraction regex is \d+ (variable-length numeric), NOT \d{12}; strict 12-digit check delegated to _RACE_ID_RE.fullmatch so malformed (10/13-digit) IDs actually reach the warning branch (was dead code — Rule 1 fix)
+- [Phase 04 P02]: Cycle-2 HIGH #1 resolved — every URL handed to fetch_html is absolute via urljoin(BASE_URL, href); parse_calendar_month_html yields absolute day URLs, enumerate_races_for_day defensively repairs non-http inputs
 
 ### Pending Todos
 
@@ -108,6 +112,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-13T23:33:55.000Z
-Stopped at: Phase 4 plan 04-01 complete
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-01-SUMMARY.md
+Last session: 2026-06-14T00:00:00.000Z
+Stopped at: Phase 4 plan 04-02 complete
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-02-SUMMARY.md

@@ -15,8 +15,8 @@
 
 ### Scraping
 
-- [ ] **SCRP-01**: fetch/parse/normalize/featureの処理を分離したスクレイピング基盤を構築できること
-- [ ] **SCRP-02**: 2022年以降のJRAレース結果・出走馬情報のHTMLを取得しraw保存できること
+- [x] **SCRP-01**: fetch/parse/normalize/featureの処理を分離したスクレイピング基盤を構築できること
+- [x] **SCRP-02**: 2022年以降のJRAレース結果・出走馬情報のHTMLを取得しraw保存できること
 - [ ] **SCRP-03**: 保存済みHTMLから必要情報を抽出し、standard形式に変換できること
 - [ ] **SCRP-04**: 全通りの三連複オッズ（最大816通り）を取得し、レースID・組み合わせ・オッズの形式で保存できること
 - [ ] **SCRP-05**: 同一ページの重複取得を回避し、既存HTMLキャッシュを活用できること
@@ -93,8 +93,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-03 | Phase 3 | Complete |
 | DATA-04 | Phase 1 | Complete |
 | DATA-05 | Phase 6 | Pending |
-| SCRP-01 | Phase 4 | Pending |
-| SCRP-02 | Phase 4 | Pending |
+| SCRP-01 | Phase 4 | Complete |
+| SCRP-02 | Phase 4 | Complete |
 | SCRP-03 | Phase 4 | Pending |
 | SCRP-04 | Phase 5 | Pending |
 | SCRP-05 | Phase 4 | Pending |
