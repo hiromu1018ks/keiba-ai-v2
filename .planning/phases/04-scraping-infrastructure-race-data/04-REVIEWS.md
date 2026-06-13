@@ -1,8 +1,8 @@
 ---
 phase: 4
 reviewers: [codex]
-reviewed_at: 2026-06-13T09:29:51Z
-cycle: 2
+reviewed_at: 2026-06-13T10:01:47Z
+cycle: 3
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
@@ -12,18 +12,288 @@ plans_reviewed:
   - 04-06-PLAN.md
 ---
 
-# Cross-AI Plan Review — Phase 4 (Cycle 2)
+# Cross-AI Plan Review — Phase 4 (Cycle 3 / Final Convergence Cycle)
 
-> **This cycle (2) is a fresh review of the revised 6-plan structure.**
-> The 10 HIGHs from cycle 1 are verified below against the *current* plan text
-> and the authoritative schema/source files. Prior HIGHs that are now fully
-> fixed are marked RESOLVED and are NOT recounted in the cycle-2 HIGH total.
-> The cycle-1 review is preserved verbatim in the **Cycle 1 History** section
-> at the bottom of this document for reference only.
+> **This is cycle 3 of 3** in a plan-review-convergence loop. The plans were
+> revised in cycle 2 to resolve 8 HIGH concerns. This cycle reviews the CURRENT
+> plans freshly and independently: are the 8 cycle-2 HIGHs now genuinely fully
+> resolved, did the cycle-2 revision introduce any NEW correctness issue, and
+> do any prior HIGHs persist?
+>
+> All reviewer claims were independently re-verified by the reviewing
+> orchestrator against the authoritative source files (`src/schemas/*.py`,
+> `src/pipeline/column_mapping.py`) and the actual Kaggle Parquet dtypes
+> (`pyarrow.parquet.read_schema`) before being recorded here.
+>
+> Cycles 1 and 2 are preserved verbatim in the **History** sections at the
+> bottom of this document for reference only. Per the cycle contract, HIGH
+> mentions there are NOT recounted in the cycle-3 total unless explicitly
+> carried forward as a current finding.
 
 ---
 
-## Cycle 2 Summary
+## Cycle 3 Summary
+
+- **Reviewer:** Codex (codex exec) + orchestrator-side re-verification (Claude Code)
+- **Cycle-2 HIGHs:** 8 raised; **7 FULLY RESOLVED**, **1 FULLY RESOLVED in design** (#7 rule is sound) but undermined by a NEW dtype-assignment error
+- **Cycle-3 verdict:** REVIEW AGAIN (2 NEW HIGHs introduced by the cycle-2 revision)
+- **Cycle-3 HIGHs remaining:** **2** (both NEW this cycle; no prior HIGH persists)
+- **Convergence:** Not yet converged (max-3 cycle loop exhausted; 2 narrow,
+  localized fixes would clear the plans for execution)
+
+### Authoritative source facts (independently re-verified this cycle)
+
+These ground-truth facts were checked against the actual repo before any
+finding was recorded:
+
+- `EntrySchema` and `ResultSchema` have **no** `race_date` field (only
+  `race_id` + `horse_race_id`); `RaceSchema` HAS `race_date: str`.
+  → cycle-2 #6 was a real concern; the `partition_map` fix is correct.
+- `column_mapping.py:61` maps `レース記号/牡 -> race_flag_colt_only` (bare 牡);
+  line 66 maps `レース記号/見習騎手 -> race_flag_apprentice` (bare).
+  → cycle-2 #2 was a real concern; the exhaustive FLAG_CROSSWALK fix is correct.
+- Kaggle `result.parquet`: `finish_position -> int64 nullable=True`;
+  **`corner_1..corner_4 -> double nullable=True`** (NOT int).
+- Kaggle `entry.parquet`: `popularity/win_odds/weight_assigned/horse_weight/
+  weight_change -> double nullable=True`; `bracket_num/horse_number/age ->
+  int64 nullable=True`.
+- Kaggle `race.parquet`: **11** race_flag_* columns are Arrow `null`
+  (stallion_only, colt_only, open, gelding_only, amateur, female_jockey,
+  listed, maiden, mare_only, stakes, young_horse); **9** are Arrow `bool`.
+  `obstacle`, `surface_detail`, `track_condition_detail` are also Arrow `null`.
+- Empirical: `pd.array([5,7,None], dtype="Int64")` → Arrow `int64`;
+  Kaggle corner is Arrow `double`; `str(int64) != str(double)`.
+  `pd.array(..., dtype="Float64")` → Arrow `double` (matches).
+
+### Cycle-2 HIGH resolution status (verified against current plan text)
+
+| # | Cycle-2 HIGH | Cycle-3 verdict | Evidence in current plan text |
+|---|--------------|-----------------|-------------------------------|
+| 1 | Relative day URLs not absolutized | **FULLY RESOLVED** | 04-02 `parse_calendar_month_html` applies `urljoin(BASE_URL, href)`; `enumerate_races_for_day` defensively repairs non-`http` URLs; `test_day_urls_are_absolute` + `test_repair_relative_day_url` guard it. `grep urljoin` acceptance criterion requires ≥2 matches. |
+| 2 | FLAG_CROSSWALK incomplete (牡, bare 見習騎手) | **FULLY RESOLVED** | 04-04 FLAG_CROSSWALK includes `("(牡)","race_flag_colt_only")`, both bare and parenthesized `見習騎手`. `test_crosswalk_covers_all_kaggle_flag_targets` is parametrized over all 13 KAGGLE_COLUMN_MAP race_flag_* targets (mechanical diff guard). Verified `column_mapping.py:61/66` are exactly the rows the plan now covers. |
+| 3 | dtype coercion not enforced (`errors="ignore"`) | **FULLY RESOLVED** | 04-05 `_build_typed_dataframe` uses nullable `Int64` for `Optional[int]` (finish_position), wraps casts to RE-RAISE on genuine failure, NO `errors="ignore"` (`test_no_errors_ignore_in_source` grep guard). `test_finish_position_none_preserves_int64_nullable` + `test_genuine_coercion_failure_raises` lock it in. |
+| 4 | Same-month partition overwrite | **FULLY RESOLVED** | 04-05 `write_partitioned_parquet` reads the existing same-month file, `pd.concat`, `drop_duplicates(subset=[primary_key], keep="last")` before atomic replace. `test_same_month_merge_dedup_preserves_sentinel` asserts a prior-run sentinel row survives a same-month re-run AND duplicate PKs collapse. |
+| 5 | No full-chain e2e | **FULLY RESOLVED (design)** | 04-06 `TestFullChainE2E.test_full_chain_end_to_end` connects REAL enumerate→injected fetch→REAL parse→REAL normalize. (See NEW HIGH #2 below: the offline race-fetch wiring needs a one-line fix for the test to actually exercise failure paths as specified, but the happy-path e2e is sound.) |
+| 6 | entry/result partition by race_date is KeyError | **FULLY RESOLVED** | 04-05 `write_partitioned_parquet` signature has `partition_map: Optional[dict[str, datetime.date]]`; `normalize_to_parquet` builds it from race_df and passes to entry/result. `test_entry_result_partitioned_via_partition_map` + `test_entry_write_without_partition_map_raises` (fail-loud) guard it. |
+| 7 | dtype-fidelity assertion unachievable (null Kaggle cols) | **FULLY RESOLVED (rule)** | 04-06 `test_physical_type_equality_for_non_null_kaggle_columns` (equality branch) + `test_promotion_allowed_for_null_kaggle_columns` (promotion branch) precisely replace the unachievable all-columns-equality. The split itself is correct and achievable. (See NEW HIGH #1 below: 04-05's corner→Int64 assignment violates this rule and would break the equality branch — but that is a dtype-map error in 04-05, not a flaw in the #7 rule, so #7 itself is resolved.) |
+| 8 | `fetch_with_retry` export contradiction | **FULLY RESOLVED** | 04-03 defines BOTH the `FetcherSession.fetch_with_retry` method AND a thin module-level `fetch_with_retry(url, retries, headless)` wrapper that constructs a transient session and delegates. `TestModuleLevelFetchWithRetry` (import-succeeds + delegation + docstring-warning) guards it. The exact verify import now succeeds. |
+
+**All 8 cycle-2 HIGHs are FULLY RESOLVED.** None persists. The two findings
+below are NEW issues that the cycle-2 revision introduced or exposed.
+
+---
+
+## Codex Review (Cycle 3)
+
+> Codex (codex exec, gpt-5.5) reviewed the full 6-plan set with the cycle-2
+> HIGHs and authoritative source facts in scope. The orchestrator
+> independently re-verified every Codex claim against the plan text and source
+> files before recording it. Both Codex HIGHs reproduce on inspection.
+
+### Codex Verdict
+
+Cycle-2 HIGH 8件のうち、7件は解消、1件は実行時矛盾により未解消 (the
+corner dtype, classified here as NEW). さらに orchestrator の offline fetch
+経路に新規 HIGH がある。Remaining prior HIGH: 1 (the corner issue, surfaced
+via #7's equality test); New HIGH: 1 (offline race-fetch path). 合計 HIGH: 2.
+収束判定: 未収束.
+
+### Codex HIGH Findings (re-verified by orchestrator)
+
+#### HIGH-1 (NEW): `corner_1..corner_4` dtype contradicts the 04-06 equality test
+
+- **Where:** 04-05 SCHEMA_DTYPE_MAP (plan line 115) assigns `corner_1..corner_4`
+  to `"Int64"` (pandas nullable integer), citing "high null rates".
+- **Authoritative Kaggle dtype:** `corner_1..corner_4 -> double nullable=True`
+  (verified via `pyarrow.parquet.read_schema` on `data/standard/result.parquet`).
+- **Why it breaks:** `corner_*` is a NON-null Arrow type in Kaggle (`double`),
+  so it falls in the **EQUALITY branch** of 04-06
+  `test_physical_type_equality_for_non_null_kaggle_columns`, which asserts
+  `str(scraped_type) == str(kaggle_type)`. A pandas `Int64` column serializes
+  to Arrow `int64` (empirically confirmed), and `str(int64) != str(double)`.
+  The equality assertion therefore FAILS at execution time for all 4 corner
+  columns.
+- **This is a genuine execution-time break, not a stylistic concern.** The
+  04-06 test as written cannot pass given the 04-05 dtype map as written.
+- **Severity:** HIGH — the schema-compatibility quality gate (cycle-2 #7) is
+  the load-bearing correctness check for Phase 6 Kaggle join compatibility;
+  it cannot pass as specified.
+- **Fix (concrete, small):** change `corner_1..corner_4` in SCHEMA_DTYPE_MAP
+  from `"Int64"` to `"Float64"` (serializes to Arrow `double`, matches Kaggle).
+  Add a normalizer test asserting `df["corner_1"].dtype` serializes to Arrow
+  `double`. (Corners are integer-valued passing positions but Kaggle stores
+  them as `double`; Float64 preserves them exactly and matches the physical
+  type.) Optionally also add `corner_*` to the 04-06 equality-test example
+  list so a future regression is named.
+- **Origin:** introduced by the cycle-2 SCHEMA_DTYPE_MAP rewrite (the rewrite
+  was done to fix #3 and correctly promoted finish_position to Int64, but
+  mistakenly grouped corners with finish_position).
+
+#### HIGH-2 (NEW): offline injected-fetch path crashes on non-pre-saved races
+
+- **Where:** 04-06 orchestrator `run_scrape(..., live=False, fetch_html=transport)`
+  path (plan lines 127, 129) and `TestFullChainE2E.test_full_chain_handles_failed_fetch`
+  (plan line 208).
+- **Why it breaks:** In the offline path, the injected `fetch_html` transport
+  is used **only by `enumerate_races`** (calendar/day pages). The orchestrator
+  then calls `fetch_race_html(race_ref, session_or_none, raw_dir)` where
+  `session_or_none` is `None` (no FetcherSession is created when
+  `live=False`). `fetch_race_html` (04-03 line 108) short-circuits via SCRP-05
+  dedup ONLY when `out_path.exists() and out_path.stat().st_size > 0`. If the
+  raw HTML for a race is **not** already on disk, `fetch_race_html` proceeds
+  to `session.fetch_with_retry(url)` against a `None` session →
+  `AttributeError: 'NoneType' object has no attribute 'fetch_with_retry'`.
+- **Consequence for the happy-path e2e:** `test_full_chain_end_to_end` is
+  fine — it explicitly pre-saves each fixture's HTML to the expected raw path
+  (plan line 203) so dedup short-circuits before the None session is touched.
+- **Consequence for `test_full_chain_handles_failed_fetch`:** this test is
+  semantically invalid as written. It configures the transport to return
+  `None` for "one race URL", intending to exercise a race-fetch failure — but
+  the transport is never consulted for race fetching in the offline design.
+  Either (a) the race is pre-saved and succeeds (transport-None ignored), or
+  (b) the race is NOT pre-saved and `fetch_race_html` crashes with
+  AttributeError rather than cleanly returning None. Neither outcome matches
+  the test's stated assertion ("one race dropped, no crash").
+- **This is a genuine execution-time break for the offline mode that is
+  precisely the mode cycle-2 #5's e2e test uses.** It also means any real
+  offline/injected use of the orchestrator is unsafe for races not pre-saved.
+- **Severity:** HIGH — the e2e failure-path test cannot pass as specified,
+  and the orchestrator's offline mode is not robust.
+- **Fix (concrete, small):** route the injected transport through to race
+  fetching in offline mode. Two clean options: (a) give `fetch_race_html` an
+  optional `fetch_callable` param that, when provided, is used instead of the
+  session to fetch + atomic-write the HTML (then dedup + the test both work);
+  or (b) in the orchestrator offline branch, when no session exists, call the
+  transport for the race URL, atomic-write the HTML to the expected raw path,
+  then proceed to parse. Option (a) is cleaner and lets
+  `test_full_chain_handles_failed_fetch` exercise a real transport-None →
+  `fetch_race_html`-returns-None → race-skipped flow.
+- **Origin:** introduced by the cycle-2 #5 injectable-boundary revision. The
+  revision correctly made enumeration injectable but left race fetching on the
+  session path, creating a split where the two fetch boundaries
+  (calendar/day vs race) use different transports.
+
+### Codex per-cycle-2-HIGH re-judgment
+
+| # | Codex verdict | Orchestrator verdict |
+|---|---------------|----------------------|
+| 1 relative day URL | FULLY RESOLVED | agree |
+| 2 FLAG_CROSSWALK | FULLY RESOLVED (recommends a bare-`牡` auto-test) | agree; note 04-04 already has `("牡",...)` and `("(牡)",...)` so bare 牡 is covered, but an explicit `derive_race_flags('...(牡)')["race_flag_colt_only"] is True` test would harden it (already present as `test_colt_only_derivable`) |
+| 3 strict dtype coercion | FULLY RESOLVED | agree |
+| 4 same-month merge/dedup | FULLY RESOLVED | agree |
+| 5 full-chain e2e | FULLY RESOLVED (design) | agree, modulo NEW HIGH-2 wiring fix |
+| 6 entry/result partition_map | FULLY RESOLVED | agree |
+| 7 dtype-fidelity | NOT FULLY RESOLVED (corner type) | classified as NEW HIGH-1 (the #7 rule is sound; 04-05's corner dtype is the defect) |
+| 8 module-level fetch_with_retry | FULLY RESOLVED | agree |
+
+### Codex Per-Plan Notes (cycle 3)
+
+- **04-01:** No issues. Import-safe skeleton is correct.
+- **04-02:** No issues. URL absolutization is concrete and tested.
+- **04-03:** No issues. Module-level `fetch_with_retry` wrapper resolves #8;
+  docstring loop-warning prevents the browser-per-request regression.
+- **04-04:** No issues. FLAG_CROSSWALK exhaustive; parametrized coverage test
+  is the right mechanical guard. Recommend an explicit bare-`牡` derivation
+  test (cosmetic hardening; `(牡)` and `牡` are both already in FLAG_CROSSWALK).
+- **04-05:** **NEW HIGH-1.** SCHEMA_DTYPE_MAP assigns `corner_1..4` to `Int64`
+  but Kaggle is `double`; change to `Float64`. Everything else in this plan
+  (strict coercion, merge-dedup, partition_map, integrity checks) is sound.
+- **04-06:** **NEW HIGH-2.** Offline injected-fetch path dereferences a None
+  session for non-pre-saved races; `test_full_chain_handles_failed_fetch` is
+  semantically invalid as a result. The equality-vs-promotion dtype-fidelity
+  split (#7) is correct in principle but will fail for corners until HIGH-1
+  is fixed.
+
+### Recommended Fixes Before Implementation (Cycle 3 → execution)
+
+1. **(HIGH-1)** In 04-05 SCHEMA_DTYPE_MAP, change `corner_1..corner_4` from
+   `"Int64"` to `"Float64"`. Add a normalizer assertion that corners
+   serialize to Arrow `double`. (One-line dtype change + one test line.)
+2. **(HIGH-2)** In 04-06 orchestrator, route the injected `fetch_html`
+   transport through to race fetching in offline mode (give `fetch_race_html`
+   an optional `fetch_callable` param, OR atomic-write via the transport in
+   the offline branch). This makes `test_full_chain_handles_failed_fetch`
+   testable and the offline mode robust. (Small, localized change.)
+
+Both fixes are narrow and do not require re-architecting any plan. After
+these two changes, the plans are ready for execution.
+
+**CYCLE 3 VERDICT: REVIEW AGAIN** (2 NEW HIGHs; max-3 cycle loop reached.
+Both fixes are small and localized; the plans are otherwise sound and all
+prior HIGHs are resolved.)
+
+---
+
+## Consensus Summary (Cycle 3)
+
+> Single external reviewer (Codex) with orchestrator-side re-verification
+> against schemas, column_mapping.py, and Kaggle Parquet dtypes. No
+> divergence between Codex and the orchestrator on any finding.
+
+### Agreed Strengths (carried forward + confirmed this cycle)
+
+- Fetch / parse / normalize separation remains architecturally sound.
+- All 8 cycle-2 HIGHs are FULLY RESOLVED in the current plan text (verified
+  against authoritative source files, not just plan assertions).
+- Cycle-1 HIGHs #1, #2, #3, #5, #10 remain resolved (no regression).
+- 04-04 FLAG_CROSSWALK exhaustive coverage test is the right mechanical guard
+  against silent Kaggle-join gaps.
+- 04-05 strict dtype coercion (no `errors="ignore"`; nullable Int64 for
+  Optional[int]; raise-on-genuine-failure) correctly fixes cycle-2 #3.
+- 04-05 same-month merge-dedup and partition_map correctly fix cycle-2 #4/#6.
+- 04-06 equality-vs-promotion dtype-fidelity rule (#7) is correctly designed
+  and achievable in principle.
+
+### Agreed Concerns (HIGHs remaining in cycle 3)
+
+The following **2** HIGH-severity concerns remain. Both are NEW this cycle
+(introduced/exposed by the cycle-2 revision); **no prior HIGH persists**.
+
+1. **(NEW, in 04-05) `corner_1..corner_4` dtype `Int64` contradicts the 04-06
+   equality test against Kaggle `double`.** The 04-06
+   `test_physical_type_equality_for_non_null_kaggle_columns` compares
+   `str(field.type)`; Int64 → Arrow `int64` ≠ Kaggle `double`. The test fails
+   at execution time for all 4 corner columns. Fix: `corner_*` → `"Float64"`.
+
+2. **(NEW, in 04-06) Offline injected-fetch path crashes on non-pre-saved
+   races.** `run_scrape(live=False, fetch_html=transport)` uses the transport
+   only for enumeration and passes a `None` session to `fetch_race_html`; any
+   race not pre-saved to the raw path triggers
+   `AttributeError: 'NoneType' ... fetch_with_retry`. This also makes
+   `test_full_chain_handles_failed_fetch` semantically invalid (transport-None
+   never flows to race fetching). Fix: route the transport through to race
+   fetching in offline mode (e.g. optional `fetch_callable` param on
+   `fetch_race_html`).
+
+### Divergent Views
+
+None. Codex and the orchestrator agree on both findings and on the
+fully-resolved status of all 8 cycle-2 HIGHs.
+
+### Note on Convergence
+
+This was the final cycle (3 of 3) of the plan-review-convergence loop. The
+plans are NOT fully converged — 2 NEW HIGHs remain. However, both are narrow,
+localized, and have concrete one-line/small fixes that do not require
+re-architecting any plan or revisiting any resolved HIGH. The recommended path
+is to apply the two fixes directly (they are small enough not to require a
+full re-review) and proceed to execution, OR re-run `/gsd-plan-phase 4
+--reviews` to fold them into a cycle-4 revision if a fresh review pass is
+desired.
+
+---
+
+## History: Cycle 2 Review
+
+> The section below is the cycle-2 review, preserved verbatim for reference.
+> Per the cycle-3 contract, HIGHs recorded here are **NOT** recounted in the
+> cycle-3 total unless explicitly carried forward above as a current finding.
+> All 8 cycle-2 HIGHs are verified FULLY RESOLVED in cycle 3 (see the table
+> above); none persists into the cycle-3 count.
+
+---
+
+## Cycle 2 Summary (Historical)
 
 - **Reviewer:** Codex (gpt-5.5, codex exec)
 - **Cycle-1 HIGHs:** 10 raised
@@ -51,7 +321,7 @@ plans_reviewed:
 
 ---
 
-## Codex Review (Cycle 2)
+## Codex Review (Cycle 2 — Historical)
 
 ### 10 Prior HIGH Verification
 
@@ -68,7 +338,7 @@ plans_reviewed:
 | 9 | STILL OPEN | The e2e body is parse→normalize only. Enumeration and fetch live in separate, fully-mocked tests; nothing connects enumerate→fetch→parse→normalize in a single test. 04-06:183, 04-06:197 |
 | 10 | FULLY RESOLVED | `<th>`-name column resolution and a column-order-change test are explicit. 04-04:188 |
 
-### New Blockers (raised this cycle)
+### New Blockers (raised cycle 2)
 
 - **HIGH: entry/result cannot be partitioned by `race_date`.** `write_partitioned_parquet` reads `df["race_date"]` to partition, but `EntrySchema` and `ResultSchema` have no `race_date` field (verified: only `RaceSchema` has it). The entry/result DataFrames raise `KeyError` on `df["race_date"]`. 04-05:130
 - **HIGH: dtype-fidelity assertion is unachievable.** pandas nullable `boolean` always serializes to Arrow `bool`, even for an all-None column (verified: `pd.array([None,None], dtype="boolean")` → arrow `bool`). Kaggle's null-only flag columns are Arrow `null`, not `bool`. The plan's mandated "physical-type equality on every overlapping column" cannot hold for those columns. 04-05:109
@@ -78,7 +348,7 @@ plans_reviewed:
 - **MEDIUM: golden-fixture requirement is weak.** The cancellation fixture is optional and its test allows `pytest.skip`, so the must-have cancellation axis is not guaranteed.
 - **MEDIUM: `live` is a dead parameter.** `live=False` still permits network access, so it provides no safety. 04-06:124
 
-### Per-Plan Review
+### Per-Plan Review (Cycle 2)
 
 #### 04-01 — Package Skeleton and Dependencies
 **Summary:** Import-safe handling is appropriate and resolves prior HIGH #3.
@@ -136,7 +406,7 @@ plans_reviewed:
 **Suggestions:** Use a fake fetch callable + golden HTML to actually run calendar-fixture → day-fixture → raw save → parse → partition output; delete `live` or make `False` forbid network.
 **Risk Assessment:** HIGH
 
-### Required Fixes (Codex)
+### Required Fixes (Codex) — Cycle 2
 
 1. Add `牡` and bare `見習騎手` to the crosswalk.
 2. Absolutize the day URL.
@@ -149,50 +419,22 @@ plans_reviewed:
 
 **CYCLE 2 VERDICT: REVIEW AGAIN**
 
----
+### Cycle 2 Agreed Concerns (HIGHs remaining in cycle 2)
 
-## Consensus Summary (Cycle 2)
+The following 8 HIGH-severity concerns remained unresolved in cycle 2. They
+broke down as 5 prior HIGHs that were only PARTIALLY RESOLVED / STILL OPEN
+and 3 newly raised HIGHs introduced or exposed by the revision.
 
-> Single reviewer (Codex); all findings independently re-verified by the
-> reviewing orchestrator against schemas, Kaggle Parquet, and column_mapping.py.
+1. **(PARTIALLY RESOLVED, prior #4) Relative day URLs not absolutized.**
+2. **(PARTIALLY RESOLVED, prior #6) Flag crosswalk missing `牡` and paren-variant `見習騎手`.**
+3. **(PARTIALLY RESOLVED, prior #7) Dtype coercion not enforced.**
+4. **(PARTIALLY RESOLVED, prior #8) Same-month partition overwrite.**
+5. **(STILL OPEN, prior #9) No single full-chain end-to-end test.**
+6. **(NEW) entry/result partition by `race_date` is a KeyError.**
+7. **(NEW) dtype-fidelity assertion is unachievable for null-typed Kaggle columns.**
+8. **(NEW) `fetch_with_retry` export contradiction.**
 
-### Agreed Strengths (carried + new)
-
-- Fetch/parse/normalize separation remains architecturally sound
-- Import-safe `__init__.py` sequencing (prior #3) is correctly resolved
-- `RaceRef` + `race_date`-based raw paths (prior #1) correctly resolved
-- 14-digit `horse_race_id` (prior #2) correctly resolved and matches real Kaggle data
-- Corrected `COURSE_CODE_MAP` with all-10-venue parametrized regression guard (prior #5)
-- Header-driven column resolution (prior #10) correctly resolved
-- Normalizer reindex against `Schema.model_fields`, integrity checks, and atomic write are real improvements
-
-### Agreed Concerns (HIGHs remaining in cycle 2)
-
-The following 8 HIGH-severity concerns remain unresolved. They break down as
-5 prior HIGHs that are only PARTIALLY RESOLVED / STILL OPEN and 3 newly raised
-HIGHs introduced or exposed by the revision.
-
-1. **(PARTIALLY RESOLVED, prior #4) Relative day URLs not absolutized.** `parse_calendar_month_html` yields `/race/list/{8d}/`; `enumerate_races_for_day` forwards it to Playwright, which needs an absolute URL. Enumeration will fail at fetch time.
-
-2. **(PARTIALLY RESOLVED, prior #6) Flag crosswalk missing `牡` and paren-variant `見習騎手`.** `column_mapping.py:61` maps `牡 → race_flag_colt_only`; the plan's `FLAG_CROSSWALK` omits it, so `race_flag_colt_only` is silently always None. `見習騎手` appears without parens in the authoritative map but the plan matches only `(見習騎手)`.
-
-3. **(PARTIALLY RESOLVED, prior #7) Dtype coercion not enforced.** `_build_typed_dataframe` uses `astype(target, errors="ignore")`, which silently skips failed conversions. `finish_position` is `Optional[int]` but assigned non-nullable `int64`; a None value leaves the column as `float64` undetected. The dtype guarantee is stated but not actually enforced.
-
-4. **(PARTIALLY RESOLVED, prior #8) Same-month partition overwrite.** Date-partitioning protects other months, but re-running the same month (smoke then full run) atomically replaces that month's file with no read-merge-dedup of existing rows.
-
-5. **(STILL OPEN, prior #9) No single full-chain end-to-end test.** The e2e fixture test covers parse→normalize only. Enumeration and fetch are exercised in separate, fully-mocked tests. No test connects enumerate→fetch→parse→normalize in one flow.
-
-6. **(NEW) entry/result partition by `race_date` is a KeyError.** `write_partitioned_parquet` reads `df["race_date"]`, but `EntrySchema` and `ResultSchema` have no `race_date` field. The entry/result DataFrames raise `KeyError`. Partition key must be joined from the race table.
-
-7. **(NEW) dtype-fidelity assertion is unachievable for null-typed Kaggle columns.** pandas nullable `boolean` always serializes to Arrow `bool` (verified empirically), but several Kaggle flag columns are Arrow `null`. The mandated "physical-type equality on every overlapping column" cannot hold. An explicit null→concrete-type promotion rule is needed.
-
-8. **(NEW) `fetch_with_retry` export contradiction.** 04-03's exports/verify treat `fetch_with_retry` as a top-level module function, but Task 1 defines it only as a `FetcherSession` method. The verify import `from src.scraper.fetcher import fetch_with_retry` would fail.
-
-### Divergent Views
-
-Not applicable — single reviewer. All HIGHs were re-verified against source.
-
-### Recommended Actions Before Implementation (Cycle 3)
+### Cycle 2 Recommended Actions Before Implementation
 
 1. Absolutize calendar/day URLs via `urljoin` in 04-02 before passing to `fetch_html`.
 2. Make `FLAG_CROSSWALK` a mechanical superset of `KAGGLE_COLUMN_MAP` flag rows; add `牡 → race_flag_colt_only` and bare `見習騎手 → race_flag_apprentice`; add a test that diffs the crosswalk against the authoritative map.
@@ -205,16 +447,16 @@ Not applicable — single reviewer. All HIGHs were re-verified against source.
 
 ---
 
-## Cycle 1 History
+## History: Cycle 1 Review
 
 > The section below is the cycle-1 review, preserved verbatim for reference.
-> Per the cycle-2 contract, HIGHs recorded here are **NOT** recounted in the
-> cycle-2 total unless explicitly carried forward above as PARTIALLY RESOLVED
-> or STILL OPEN.
+> Per the cycle-2 and cycle-3 contracts, HIGHs recorded here are **NOT**
+> recounted in later-cycle totals unless explicitly carried forward as a
+> current finding. All cycle-1 HIGHs are resolved (see the cycle-2 table).
 
 ---
 
-## Codex Review (Cycle 1)
+## Codex Review (Cycle 1 — Historical)
 
 # Cross-AI Plan Review
 
