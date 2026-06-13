@@ -608,27 +608,33 @@ def normalize_to_parquet(
 | A5 | race_id format from netkeiba matches the 12-digit format used in Kaggle data (YYYYPPCCDDRR) | Architecture | ID mismatch would break Phase 6 integration |
 | A6 | netkeiba race result page contains all data in a single page load (no pagination) | Architecture | May need additional fetch logic for multi-page results |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four open questions below have been resolved during planning. The Recommendations are kept as historical context; the RESOLVED line cites the concrete plan-level decision that superseded them.
 
 1. **Should scraped Parquet use separate files or append to existing?**
    - What we know: Kaggle data is in `data/standard/race.parquet` etc. Scraped data covers a different time period (2022-2026 vs 2015-2021).
    - What's unclear: Whether to write to `race_scraped.parquet` (separate) or append to `race.parquet` (merged).
    - Recommendation: Write to separate files (`race_scraped.parquet`) -- Phase 6 handles integration. This avoids corrupting existing validated data.
+   - **RESOLVED (per 04-05):** Use a partitioned layout `data/standard/scraped/{YYYYMM}/{race,entry,result}.parquet` keyed by `race_date` year-month, NOT a single `race_scraped.parquet` file. This supersedes the recommendation: a single-file write would overwrite prior batches (Codex Review HIGH #8). One file per month per table enables atomic per-partition writes and preserves all prior months. Phase 6 reads the partition directory.
 
 2. **Exact calendar page HTML structure**
    - What we know: URL pattern `https://db.netkeiba.com/race/calendar/{YYYYMM}/` (D-04). Three-level: month -> day -> races.
    - What's unclear: Exact DOM structure of calendar pages for parsing links to race days and individual races.
    - Recommendation: Investigate with Playwright during implementation. Build parser incrementally.
+   - **RESOLVED (per Claude's Discretion):** Deferred to implementation. 04-02 Task 1 implements `parse_calendar_month_html` / `parse_race_day_html` as BS4+lxml parsers against the live DOM, accepting an injected `fetch_html` callable so no real browser is needed in tests. The exact selector logic is implementation-time; the contract (`/race/list/{YYYYMMDD}/` day links, `/race/{12-digit}/` race links) is locked in 04-02.
 
 3. **Obstacle race exclusion**
    - What we know: Phase 2 excludes obstacle races (D-01). CONTEXT.md scope says "JRA中央競馬平地レース".
-   - What's unclear: How to detect obstacle races from netkeiba HTML (obstacle tag vs race condition text vs course info).
+   - What's unclear: How to detect obstacle races from netkeiba HTML (obstacle tag vs race condition text vs course info field).
    - Recommendation: Detect from race condition text ("障害" keyword) or course info field. Filter during normalization.
+   - **RESOLVED (per 04-04 + 04-05):** The parser (04-04) sets `obstacle = "障害"` on the race dict when the course-info / condition text contains the "障害" marker; the normalizer (04-05 `normalize_to_parquet`) applies the filter `race_df["obstacle"] == "障害"` and propagates the drop to entries/results, mirroring `kaggle_converter.py` line 89 (`df = df[df["障害区分"] != "障害"]`).
 
 4. **Playwright installation on CI**
    - What we know: Playwright requires `playwright install chromium` after pip install. Not currently in pyproject.toml.
    - What's unclear: Whether CI/CD will need Chromium installation, or if tests should mock Playwright entirely.
    - Recommendation: Mock Playwright in tests. Use saved HTML fixtures for parser tests. Only real fetch during manual execution.
+   - **RESOLVED (per Claude's Discretion):** Deferred to implementation. All unit tests in 04-02/04-03/04-05/04-06 mock Playwright (`unittest.mock.patch("src.scraper.fetcher.sync_playwright")`) or use an injected `fetch_html` callable; parser tests use saved golden HTML fixtures (04-04 Task 3 checkpoint). Chromium installation is performed locally in 04-01 Task 2 and recorded in the SUMMARY. An opt-in live smoke test (04-06 `@pytest.mark.live`, gated on `LIVE_SMOKE=1`) covers real fetch during manual execution only.
 
 ## Environment Availability
 

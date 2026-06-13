@@ -132,24 +132,28 @@ Plans:
   3. Duplicate page fetches are prevented: already-downloaded HTML is reused without re-requesting
   4. Rate limiting is enforced so the scraper does not trigger anti-bot blocks
 
-**Plans**: 5 plans
+**Plans**: 6 plans (Cycle 2 revision -- resolves all 10 HIGH cross-AI review concerns: race_id path, horse_race_id 14-digit, import-safe __init__, 3-level traversal, course codes, flag crosswalk, schema validation, partitioned output, end-to-end test, header-driven parsing)
 Plans:
 **Wave 1**
 
-- [ ] 04-01: Package skeleton + dependency installation (SCRP-01)
+- [ ] 04-01: Import-safe package skeleton + dependency install (SCRP-01)
 
-**Wave 2** *(04-02 and 04-03 run in parallel)*
+**Wave 2** *(blocked on 04-01)*
 
-- [ ] 04-02: Playwright fetcher + dedup + rate limiting + calendar enumeration + tests (SCRP-01, SCRP-02, SCRP-05)
-- [ ] 04-03: BS4+lxml parser + race flags + helper functions + tests (SCRP-01, SCRP-03)
+- [ ] 04-02: 3-level calendar enumeration returning RaceRef(race_id, race_date) + race_id validation (SCRP-01, SCRP-02)
 
-**Wave 3** *(blocked on 04-02 and 04-03)*
+**Wave 3** *(04-03 and 04-04 run in parallel)*
 
-- [ ] 04-04: Normalizer (dict -> DataFrame -> Parquet) + obstacle filter + audit + tests (SCRP-01, SCRP-03)
+- [ ] 04-03: Shared Playwright FetcherSession + atomic fetch + dedup + block-page detection (SCRP-01, SCRP-02, SCRP-05)
+- [ ] 04-04: Header-driven BS4 parser + corrected COURSE_CODE_MAP + flag crosswalk + golden HTML fixtures (SCRP-01, SCRP-03)
 
-**Wave 4** *(blocked on 04-04)*
+**Wave 4** *(blocked on 04-03 and 04-04)*
 
-- [ ] 04-05: Package integration + full test suite validation (SCRP-01, SCRP-02, SCRP-03, SCRP-05)
+- [ ] 04-05: Strict typed normalizer + schema reindex + integrity validation + atomic partitioned Parquet (SCRP-01, SCRP-03)
+
+**Wave 5** *(blocked on 04-02, 04-03, 04-04, 04-05)*
+
+- [ ] 04-06: Orchestrator + fixture-based end-to-end test + __init__ re-exports + ruff/mypy gate (SCRP-01, SCRP-02, SCRP-03, SCRP-05)
 
 ### Phase 5: Trifecta Odds Scraping
 
@@ -276,7 +280,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
 | 3. Feature Engineering | 5/5 | Complete    | 2026-06-12 |
-| 4. Scraping Infrastructure & Race Data | 0/5 | Not started | - |
+| 4. Scraping Infrastructure & Race Data | 0/6 | Not started | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
