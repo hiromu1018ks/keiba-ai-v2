@@ -132,7 +132,7 @@ Plans:
   3. Duplicate page fetches are prevented: already-downloaded HTML is reused without re-requesting
   4. Rate limiting is enforced so the scraper does not trigger anti-bot blocks
 
-**Plans**: 6 plans (Cycle 2 revision -- resolves all 10 HIGH cross-AI review concerns: race_id path, horse_race_id 14-digit, import-safe __init__, 3-level traversal, course codes, flag crosswalk, schema validation, partitioned output, end-to-end test, header-driven parsing)
+**Plans**: 6 plans (Cycle 2 reviews revision -- cycle-1 fixed 5 HIGHs (#1,#2,#3,#5,#10); cycle-2 resolves the remaining 8: #1 URL absolutization, #2 FLAG_CROSSWALK exhaustive, #3 strict dtype, #4 same-month merge-dedup, #5 full-chain e2e, #6 entry/result partition_map, #7 dtype-fidelity promotion rule, #8 fetch_with_retry wrapper)
 Plans:
 **Wave 1**
 

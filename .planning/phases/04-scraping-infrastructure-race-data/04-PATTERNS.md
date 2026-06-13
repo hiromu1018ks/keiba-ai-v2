@@ -4,15 +4,21 @@
 **Files analyzed:** 17 new/modified files across 6 plans
 **Analogs found:** 17 / 17
 
-> Regenerated after the reviews-mode revision split the original 5-plan layout
-> into 6 plans. Fixes: `__init__.py` is import-safe/empty until 04-06 (NOT
-> eager re-exports — Codex Review HIGH #3); output layout is partitioned
+> Regenerated after the cycle-2 reviews revision of the 6-plan layout.
+> Cycle-1 fixes preserved: `__init__.py` is import-safe/empty until 04-06 (NOT
+> eager re-exports — Cycle-1 HIGH #3); output layout is partitioned
 > `data/standard/scraped/{YYYYMM}/{table}.parquet` (NOT single
-> `race_scraped.parquet` — HIGH #8); the enumerator is `enumerate_races`
+> `race_scraped.parquet` — Cycle-1 HIGH #8); the enumerator is `enumerate_races`
 > returning `RaceRef(race_id, race_date)` (NOT `enumerate_race_ids` returning
-> bare strings — HIGH #1/#4). Adds classifications for the 5 new files created
-> by the revision: `models.py`, `enumeration.py`, `course_codes.py`,
-> `flag_crosswalk.py`, `orchestrator.py`.
+> bare strings — Cycle-1 HIGH #1/#4).
+>
+> **Cycle-2 additions:** enumeration absolutizes day URLs via `urljoin(BASE_URL, href)` (Cycle-2 #1);
+> `fetcher.py` exports a module-level `fetch_with_retry` wrapper alongside the method (Cycle-2 #8);
+> `FLAG_CROSSWALK` is an exhaustive superset of `column_mapping.py`'s 13 race_flag_* targets — adds 牡 and bare 見習騎手 (Cycle-2 #2);
+> `normalizer._build_typed_dataframe` uses STRICT coercion (no `errors="ignore"`) with nullable Int64/Float64 (Cycle-2 #3);
+> `write_partitioned_parquet` does same-month read-merge-dedup on primary_key and accepts `partition_map` for entry/result (Cycle-2 #4/#6 — entry/result have NO race_date column);
+> `run_scrape` accepts an injectable `fetch_html` boundary for full-chain e2e (Cycle-2 #5);
+> TestSchemaCompatibility asserts equality for non-null Kaggle columns + promotion for null Kaggle columns (Cycle-2 #7).
 
 ## File Classification
 
@@ -249,6 +255,23 @@ out_path = raw_dir / year / month / f"{race_ref.race_id}.html"
 **wait_until default** is `"domcontentloaded"` (NOT `"networkidle"` — Codex
 Review MEDIUM, networkidle is unreliable on pages with persistent requests).
 
+**CYCLE-2 #8 — module-level `fetch_with_retry` wrapper (NEW):** the verify
+block imports `fetch_with_retry` at module level, so a thin wrapper exists
+alongside the `FetcherSession.fetch_with_retry` method:
+```python
+def fetch_with_retry(url: str, retries: int = MAX_RETRIES, headless: bool = True) -> Optional[str]:
+    """Thin convenience wrapper for one-off/CLI/smoke callers.
+
+    Constructs a transient FetcherSession and delegates. Do NOT call this in a
+    loop over many URLs — use FetcherSession.fetch_with_retry on a single shared
+    session instead (avoids the browser-per-request regression, Cycle-1 HIGH).
+    """
+    with FetcherSession(headless=headless) as session:
+        return session.fetch_with_retry(url, retries=retries)
+```
+The orchestrator (Plan 06) uses the METHOD on a shared session; the wrapper is
+for single-shot CLI/smoke use only.
+
 ---
 
 ### `src/scraper/course_codes.py` (config, constant lookup)
@@ -406,19 +429,30 @@ from src.schemas.result import ResultSchema
 # NOTE: audit_leakage is deliberately NOT imported here (Codex Review MEDIUM)
 ```
 
-**Typed-DataFrame builder** (HIGH #7):
+**Typed-DataFrame builder** (Cycle-1 HIGH #7 + **Cycle-2 HIGH #3 strict coercion**):
 ```python
 def _build_typed_dataframe(rows: list[dict], schema: type[BaseModel]) -> pd.DataFrame:
     df = pd.DataFrame(rows) if rows else pd.DataFrame()
     df = df.reindex(columns=list(schema.model_fields.keys()))  # all columns, stable order
     for col, target in SCHEMA_DTYPE_MAP[schema].items():
-        if col in df.columns:
-            try:
-                df[col] = df[col].astype(target)
-            except (TypeError, ValueError):
-                logger.warning(f"dtype coercion failed for {col}: target={target}")
+        if col not in df.columns:
+            continue
+        # CYCLE-2 #3: STRICT coercion. No errors="ignore" (it silently skipped
+        # failed conversions, leaving None-containing int columns as float64).
+        # Nullable Int64/Float64/boolean succeed on mixed None+value input;
+        # genuine conversion failures (non-numeric text in a numeric column) RAISE.
+        try:
+            df[col] = df[col].astype(target)  # nullable dtype handles None as NA
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                f"Column {col} could not be coerced to {target} for "
+                f"{schema.__name__}: {e}"
+            ) from e
     return df
 ```
+`SCHEMA_DTYPE_MAP[ResultSchema]["finish_position"] == "Int64"` (nullable) —
+matches Kaggle's `int64 nullable=True` Arrow type exactly; the Cycle-1 plan's
+non-nullable `"int64"` was unreachable for None-containing input.
 
 **Integrity validation** (Codex Review MEDIUM — unique, FK, 1-to-1):
 ```python
@@ -434,10 +468,15 @@ race_df = race_df[race_df["obstacle"] != "障害"].copy()
 ```
 
 **SCHEMA_DTYPE_MAP** — concrete dtypes matching Kaggle Parquet exactly (see
-04-05 Task 1 for the authoritative field-by-field list). Non-nullable
-`int64`/`float64` where Kaggle is non-nullable; nullable `boolean` for the 20
-race_flag_* fields because Kaggle itself mixes nullable and non-nullable flag
-columns.
+04-05 Task 1 for the authoritative field-by-field list). **Cycle-2 #3: nullable
+`Int64`/`Float64`/`boolean` are used throughout** because Kaggle's int/double
+columns are themselves `nullable=True` in Arrow (verified via
+`pq.read_schema('data/standard/result.parquet')` — finish_position is
+`int64 nullable=True`). Nullable pandas dtypes serialize to the same Arrow
+physical type, so equality holds in 04-06 TestSchemaCompatibility. For the 20
+race_flag_* fields, nullable `boolean` is used because Kaggle mixes non-null
+`bool` and Arrow `null` flag columns; 04-06 TestSchemaCompatibility treats the
+null-only Kaggle columns as deliberate promotions (Cycle-2 #7).
 
 ---
 
@@ -468,16 +507,31 @@ def run_scrape(
     standard_dir: Path = Path("data/standard"),
     live: bool = False,
     max_races: Optional[int] = None,
+    fetch_html: Optional[Callable[[str], Optional[str]]] = None,  # CYCLE-2 #5
 ) -> dict[str, list[Path]]:
-    """Wire enumeration -> fetch -> parse -> normalize through ONE FetcherSession."""
+    """Wire enumeration -> fetch -> parse -> normalize.
+
+    CYCLE-2 #5: fetch_html is the injectable network boundary. If provided,
+    enumeration uses it and NO real browser is launched (deterministic test
+    path). If None AND live=True, a real FetcherSession is opened. If None AND
+    live=False, raise ValueError — `live=False` MUST forbid network (Cycle-1
+    MEDIUM: `live` is not a dead parameter).
+    """
     parsed_races = []
-    with FetcherSession() as session:                # one browser per batch
-        fetch_html = make_fetch_html_callable(session)
+    if fetch_html is None and not live:
+        raise ValueError("run_scrape requires either live=True or an injected fetch_html callable")
+    session_cm = FetcherSession() if (live and fetch_html is None) else None
+    with session_cm as session if session_cm else _NullContext():
+        if fetch_html is None:
+            fetch_html = make_fetch_html_callable(session)
         refs = enumerate_races(start_date, end_date, fetch_html)
         if max_races:
             refs = refs[:max_races]
         for ref in refs:
-            path = fetch_race_html(ref, session, raw_dir)
+            # When fetch_html is injected and live=False, tests pre-save golden
+            # HTML to the expected raw path so fetch_race_html's SCRP-05 dedup
+            # returns the path without calling the transport.
+            path = fetch_race_html(ref, session, raw_dir) if session else _dedup_or_skip(ref, raw_dir)
             if path is None:
                 logger.warning(f"fetch failed for {ref.race_id}, skipping")
                 continue
@@ -492,6 +546,14 @@ def run_scrape(
 - Returns a structured result (`dict[str, list[Path]]` here; `dict[str, Path]`
   in kaggle_converter — the scraper returns lists because output is
   partitioned across months).
+
+**CYCLE-2 #5 — injectable fetch boundary (NEW vs kaggle_converter):** the
+`fetch_html: Optional[Callable[[str], Optional[str]]] = None` parameter is the
+network seam. It lets the full-chain e2e test (04-06 TestFullChainE2E) pass a
+transport backed by saved golden HTML and exercise the REAL enumerate → parse →
+normalize without a browser. `live=False` WITHOUT `fetch_html` raises — this
+fixes the Codex cycle-1 MEDIUM that `live` was a dead parameter that still
+permitted network.
 
 ---
 
@@ -674,7 +736,7 @@ optional obstacle race. Each fixture is valid HTML loadable by BS4+lxml.
 **Analog:** `data/standard/race.parquet` (existing standard-layer Parquet).
 Written by 04-05 Task 1, read back by 04-06 Task 2.
 
-**CRITICAL — Codex Review HIGH #8 fix:** The original pattern map documented
+**CRITICAL — Cycle-1 HIGH #8 fix:** The original pattern map documented
 `data/standard/race_scraped.parquet` (a single file per table). That is WRONG
 — a single-file write would overwrite prior batches on every run. The revised
 layout is **date-partitioned**: one file per `{YYYYMM}` per table, keyed by
@@ -691,6 +753,33 @@ data/standard/scraped/
         race.parquet
         ...
 ```
+
+**CYCLE-2 #4 — same-month merge-dedup (NEW):** re-running the SAME month
+(e.g. `max_races=1` smoke then a full run) does NOT overwrite the prior
+partition. `write_partitioned_parquet` now accepts `primary_key` and performs
+read-merge-dedup before the atomic replace:
+```python
+def write_partitioned_parquet(
+    table_name: str,
+    df: pd.DataFrame,
+    standard_dir: Path,
+    partition_map: Optional[dict[str, datetime.date]] = None,  # CYCLE-2 #6
+    primary_key: str = "race_id",                              # CYCLE-2 #4
+) -> list[Path]:
+    # if target file exists: read -> concat -> drop_duplicates(subset=[primary_key], keep="last")
+    # then atomic temp + os.replace
+```
+A sentinel primary-key row from a prior smoke run SURVIVES a same-month full
+re-run, and duplicate primary keys within the merged frame collapse to one.
+
+**CYCLE-2 #6 — entry/result have NO race_date column (NEW):** `EntrySchema` and
+`ResultSchema` (verified against `data/standard/{entry,result}.parquet`) lack a
+`race_date` field, so partitioning them by `df["race_date"]` raises KeyError.
+The `partition_map: dict[str, datetime.date]` (race_id -> race_date) is built
+in `normalize_to_parquet` from the race DataFrame and passed to the entry/result
+writes. For entry/result the partition YYYYMM is looked up via
+`partition_map[row["race_id"]]`. Omitting the map for entry/result raises a
+loud KeyError (fail-fast, not silent mis-partition).
 
 **Parquet write parameters** (same as kaggle_converter.py line 117):
 ```python
@@ -789,4 +878,4 @@ standard_dir.mkdir(parents=True, exist_ok=True)
 
 **Analog search scope:** `src/`, `tests/`, `pyproject.toml`, `data/`
 **Files scanned:** 18 Python files + 1 TOML + 3 Parquet schemas (via `pyarrow.parquet.read_schema`)
-**Pattern extraction date:** 2026-06-13 (regenerated for the 6-plan structure)
+**Pattern extraction date:** 2026-06-13 (regenerated for the cycle-2 reviews revision)
