@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-07 complete (UAT-Test-3 gap closure)
-last_updated: "2026-06-14T04:55:56.593Z"
+stopped_at: Phase 04 plan 04-08 complete (UAT-Test-6 URL blocker closed; phase 04 fully complete)
+last_updated: "2026-06-14T05:03:25.220Z"
 last_activity: 2026-06-14 -- Phase 04 execution started
 progress:
   total_phases: 10
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 21
-  completed_plans: 20
-  percent: 30
+  completed_plans: 21
+  percent: 40
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-06-14 -- Phase 04 execution started
 
@@ -70,6 +70,7 @@ Progress: [██████████] 100%
 | Phase 04 P05 | 352 | 2 tasks | 2 files |
 | Phase 04 P06 | 840 | 3 tasks | 6 files |
 | Phase 04 P07 | 371 | 2 tasks | 3 files |
+| Phase 04 P08 | 223 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 04 P07]: UAT-Test-3 overrides Plan-04 Decision D4 — (国際)->graded_stakes mapping is a semantic error (international designation is NOT graded); removed from FLAG_CROSSWALK. GRADE_REGEX (GI/GII/GIII/重賞/ＧＩ) is the SOLE source of race_flag_graded_stakes=True.
 - [Phase ?]: [Phase 04 P07]: Kaggle-side column_mapping.py (国際)->graded mapping left untouched (out of scope). Phase 6 (Data Integration) MUST reconcile the divergence before joining scraped 2022-2024 rows with 2015-2021 Kaggle rows — either drop the Kaggle mapping too, or add a race_flag_international column on both sides.
 - [Phase ?]: [Phase 04 P07]: Rule 1 deviation — parse_race_html extended to harvest the second <h1> (grade-bearing, e.g. 第64回宝塚記念(GI)) into a grade_haystack fed to derive_race_flags + grade/grade_revision extraction. Required because removing the (国際) mapping exposed a latent bug: the bare <title> race_name lacks the GI token so GRADE_REGEX never fired, leaving the G1 fixture graded-less. Public race_name stays bare per Plan-04 P04.
+- [Phase ?]: [Phase 04 P08]: UAT-Test-6 FIX -- enumerate_race_day_urls now builds /race/list/{YYYYMM}/ (live-verified). Prior /race/calendar/ form returns 0 racing-day links. Two-layer regression guard: URL-contract test + golden calendar fixture parse test.
+- [Phase ?]: [Phase 04 P08]: Per-day blind-URL construction deliberately NOT adopted -- non-racing day's /race/list/{YYYYMMDD}/ page silently returns prior racing day's race links. Month-listing strategy avoids false attribution (T-04-18).
 
 ### Pending Todos
 
@@ -138,6 +141,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T04:55:56.588Z
-Stopped at: Phase 4 plan 04-07 complete (UAT-Test-3 gap closure; one gap plan remaining: 04-08 for UAT-Test-6 URL blocker)
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-07-SUMMARY.md
+Last session: 2026-06-14T05:03:25.215Z
+Stopped at: Phase 04 plan 04-08 complete (UAT-Test-6 URL blocker closed; phase 04 fully complete)
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-08-SUMMARY.md

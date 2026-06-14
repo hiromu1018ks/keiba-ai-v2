@@ -158,7 +158,7 @@ Plans:
 **Wave 6 — Gap Closure** *(04-07 and 04-08 run in parallel; fix UAT-Test-3 and UAT-Test-6)*
 
 - [x] 04-07: Remove (国際)->graded_stakes mapping (UAT-Test-3 flag misclassification fix) (SCRP-01, SCRP-03)
-- [ ] 04-08: Fix calendar URL from /race/calendar/ to /race/list/ + golden regression fixture (UAT-Test-6 blocker fix) (SCRP-01, SCRP-02)
+- [x] 04-08: Fix calendar URL from /race/calendar/ to /race/list/ + golden regression fixture (UAT-Test-6 blocker fix) (SCRP-01, SCRP-02)
 
 ### Phase 5: Trifecta Odds Scraping
 
@@ -285,7 +285,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
 | 3. Feature Engineering | 5/5 | Complete | 2026-06-12 |
-| 4. Scraping Infrastructure & Race Data | 7/8 | In Progress|  |
+| 4. Scraping Infrastructure & Race Data | 8/8 | Complete   | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
