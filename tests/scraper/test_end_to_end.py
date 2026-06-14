@@ -426,6 +426,119 @@ class TestFullChainE2E:
         assert race_df.iloc[0]["race_id"] == "202206050509"
 
 
+class TestResumeContract:
+    """scrape-resume-ignored regression: a re-run must NOT re-fetch
+    calendar/day pages already fetched in the first run.
+
+    The user's reported symptom: "中断して再実行した場合にまた最初からカレンダーの
+    取得が始まってしまう". The fix layers a disk cache (``src/scraper/cache.py``)
+    between ``run_scrape`` and ``enumerate_races`` so calendar month pages and
+    race-day list pages are read from ``raw_dir`` on the second run instead of
+    being re-fetched. Individual race HTML dedup (``fetch_race_html`` SCRP-05)
+    was already in place; this test pins the upper two layers.
+    """
+
+    def test_second_run_does_not_refetch_calendar_or_day_pages(
+        self, tmp_raw_dir: Path, tmp_standard_dir: Path
+    ) -> None:
+        """After a first run_scrape, a second run_scrape with the same raw_dir
+        must NOT call the transport for any ``/race/list/...`` URL -- the
+        cache should serve them from disk."""
+        fixtures = [
+            ("202206050509", datetime.date(2022, 12, 17), "06", "芝", False),
+            ("202309030811", datetime.date(2023, 6, 25), "09", "芝", True),
+        ]
+        transport = _GoldenTransport(fixtures)
+        # Wrap the transport so every URL it is asked for is recorded.
+        seen_urls: list[str] = []
+
+        def _recording_transport(url: str) -> Optional[str]:
+            seen_urls.append(url)
+            return transport(url)
+
+        # Pre-save individual race HTML so SCRP-05 dedup short-circuits race
+        # fetching on BOTH runs (we want this test to focus on enumeration).
+        _presave_fixture_raw_html(fixtures, tmp_raw_dir)
+
+        start = min(fx[1] for fx in fixtures)
+        end = max(fx[1] for fx in fixtures)
+
+        # --- First run: populates the cache. ---
+        seen_urls.clear()
+        run_scrape(
+            start_date=start,
+            end_date=end,
+            raw_dir=tmp_raw_dir,
+            standard_dir=tmp_standard_dir,
+            live=False,
+            fetch_html=_recording_transport,
+        )
+        first_run_urls = list(seen_urls)
+        # Sanity: the first run DID consult the transport for calendar/day URLs.
+        first_calendar_or_day = [
+            u for u in first_run_urls if "/race/list/" in u
+        ]
+        assert first_calendar_or_day, (
+            "first run should have fetched at least one calendar/day URL; "
+            f"got {first_run_urls!r}"
+        )
+
+        # --- Second run: should NOT consult the transport for ANY
+        # calendar/day URL. Individual race URLs are also skipped (SCRP-05
+        # pre-save), so the transport should not be called AT ALL. ---
+        seen_urls.clear()
+        run_scrape(
+            start_date=start,
+            end_date=end,
+            raw_dir=tmp_raw_dir,
+            standard_dir=tmp_standard_dir,
+            live=False,
+            fetch_html=_recording_transport,
+        )
+        second_run_urls = list(seen_urls)
+        second_calendar_or_day = [
+            u for u in second_run_urls if "/race/list/" in u
+        ]
+        assert not second_calendar_or_day, (
+            "REGRESSION scrape-resume-ignored: second run_scrape re-fetched "
+            f"calendar/day URLs {second_calendar_or_day!r} -- the resume cache "
+            "(src/scraper/cache.py) is not wired in"
+        )
+
+    def test_cache_files_land_at_expected_paths(
+        self, tmp_raw_dir: Path, tmp_standard_dir: Path
+    ) -> None:
+        """After a run, the calendar and day HTML files sit under ``raw_dir``
+        at the documented paths so a human can inspect them and an operator
+        can blow them away to force a re-fetch."""
+        fixtures = [
+            ("202206050509", datetime.date(2022, 12, 17), "06", "芝", False),
+        ]
+        transport = _GoldenTransport(fixtures)
+        _presave_fixture_raw_html(fixtures, tmp_raw_dir)
+
+        run_scrape(
+            start_date=datetime.date(2022, 12, 1),
+            end_date=datetime.date(2022, 12, 31),
+            raw_dir=tmp_raw_dir,
+            standard_dir=tmp_standard_dir,
+            live=False,
+            fetch_html=transport,
+        )
+
+        # Calendar page: raw_dir/{YYYY}/calendar/{MM}.html
+        calendar_file = tmp_raw_dir / "2022" / "calendar" / "12.html"
+        assert calendar_file.is_file(), (
+            f"calendar cache file missing at {calendar_file}"
+        )
+        assert calendar_file.stat().st_size > 0
+
+        # Race-day page: raw_dir/{YYYY}/{MM}/{YYYYMMDD}_day.html
+        day_file = tmp_raw_dir / "2022" / "12" / "20221217_day.html"
+        assert day_file.is_file(), f"day cache file missing at {day_file}"
+        assert day_file.stat().st_size > 0
+
+
 # ---------------------------------------------------------------------------
 # TestSchemaCompatibility (Cycle-2 HIGH #7): achievable dtype-fidelity.
 # ---------------------------------------------------------------------------

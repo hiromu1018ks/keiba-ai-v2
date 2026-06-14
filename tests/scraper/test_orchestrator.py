@@ -212,9 +212,16 @@ class TestRunScrape:
 
             # FetcherSession was NEVER entered in offline mode (no real browser).
             mock_session_cls.assert_not_called()
-            # enumerate_races was called with the injected transport (not a
-            # make_fetch_html_callable wrapper).
-            assert captured_transport["transport"] is _stub_transport
+            # enumerate_races was called with a CachedFetcher wrapping the
+            # injected transport. The resume cache (src/scraper/cache.py) sits
+            # between run_scrape and enumerate_races so calendar/day pages do
+            # not get re-fetched on re-run; the cache's underlying transport
+            # MUST be the injected _stub_transport (no real browser leakage).
+            from src.scraper.cache import CachedFetcher
+
+            enum_transport = captured_transport["transport"]
+            assert isinstance(enum_transport, CachedFetcher)
+            assert enum_transport._transport is _stub_transport
             # fetch_race_html was called with fetch_callable=transport
             # (Cycle-3 #2 offline race-fetch routing).
             assert mock_fetch.call_count == len(two_race_refs)
@@ -266,3 +273,57 @@ class TestRunScrape:
                 return len(passed_list)
 
         assert _run_and_capture(True) == _run_and_capture(False) == len(two_race_refs)
+
+    def test_enumeration_transport_is_cache_wrapped(
+        self, two_race_refs: list[RaceRef], tmp_raw_dir: Path
+    ) -> None:
+        """Resume contract (scrape-resume-ignored): the transport handed to
+        ``enumerate_races`` is a ``CachedFetcher`` wrapping the injected
+        transport, so calendar/day pages are NOT re-fetched on a re-run.
+
+        Without this contract the user's reported symptom returns: "中断して
+        再実行した場合にまた最初からカレンダーの取得が始まってしまう".
+        This test pins the wiring at the orchestrator boundary; the cache's
+        behaviour is pinned in ``tests/scraper/test_cache.py``.
+        """
+        from src.scraper.cache import CachedFetcher
+
+        def _stub_transport(url: str) -> Optional[str]:
+            return "<html>stub</html>"
+
+        captured: dict[str, object] = {}
+
+        with (
+            patch("src.scraper.orchestrator.FetcherSession"),
+            patch("src.scraper.orchestrator.enumerate_races") as mock_enum,
+            patch("src.scraper.orchestrator.fetch_race_html"),
+            patch("src.scraper.orchestrator.parse_race_html"),
+            patch("src.scraper.orchestrator.normalize_to_parquet"),
+        ):
+            mock_enum.return_value = two_race_refs
+
+            def _capture(start, end, transport, **kwargs):
+                captured["transport"] = transport
+                return two_race_refs
+
+            mock_enum.side_effect = _capture
+
+            run_scrape(
+                start_date=datetime.date(2022, 12, 17),
+                end_date=datetime.date(2023, 6, 25),
+                raw_dir=tmp_raw_dir,
+                live=False,
+                fetch_html=_stub_transport,
+                progress=False,
+            )
+
+        enum_transport = captured.get("transport")
+        assert isinstance(enum_transport, CachedFetcher), (
+            "run_scrape must wrap the enumeration transport in a CachedFetcher "
+            "so calendar/day pages are not re-fetched on resume"
+        )
+        # The cache's underlying transport is the injected stub (no real
+        # browser leakage in offline mode).
+        assert enum_transport._transport is _stub_transport
+        # The cache points at the same raw_dir run_scrape was given.
+        assert enum_transport._raw_dir == tmp_raw_dir

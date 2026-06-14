@@ -52,6 +52,7 @@ from typing import Callable, Iterable, Optional
 from loguru import logger
 from tqdm import tqdm
 
+from src.scraper.cache import make_cached_fetcher
 from src.scraper.enumeration import enumerate_races
 from src.scraper.fetcher import FetcherSession, fetch_race_html, make_fetch_html_callable
 from src.scraper.models import RaceRef
@@ -143,8 +144,13 @@ def run_scrape(
                 if fetch_html is not None
                 else make_fetch_html_callable(session)
             )
+            # Cache the upper enumeration layers (calendar month pages +
+            # race-day list pages) so a resume does NOT re-fetch them. Only
+            # list-page URLs are cached; individual race HTML is dedup'd by
+            # fetch_race_html (SCRP-05). See src/scraper/cache.py.
+            cached_enum_transport = make_cached_fetcher(enum_transport, raw_dir)
             race_refs = enumerate_races(
-                start_date, end_date, enum_transport, progress=progress
+                start_date, end_date, cached_enum_transport, progress=progress
             )
             parsed_races = _fetch_and_parse(
                 race_refs=race_refs,
@@ -158,7 +164,13 @@ def run_scrape(
         # Offline mode: the injected transport drives BOTH enumeration and
         # (as fetch_callable) race fetching (Cycle-3 #2 routing).
         assert fetch_html is not None  # guarded by the ValueError branch above
-        race_refs = enumerate_races(start_date, end_date, fetch_html, progress=progress)
+        # Same enumeration-layer cache as live mode -- offline runs (e.g. the
+        # Cycle-2 #5 e2e test) write calendar/day HTML to raw_dir on first
+        # call and read from disk on a second enumerate_races pass.
+        cached_enum_transport = make_cached_fetcher(fetch_html, raw_dir)
+        race_refs = enumerate_races(
+            start_date, end_date, cached_enum_transport, progress=progress
+        )
         parsed_races = _fetch_and_parse(
             race_refs=race_refs,
             raw_dir=raw_dir,
