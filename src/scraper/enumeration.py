@@ -6,6 +6,17 @@ page lists the individual races held that day. The result is a deduplicated
 ``list[RaceRef]`` carrying both ``race_id`` and the authoritative
 ``race_date`` (parsed from the calendar/day page).
 
+UAT-Test-6 (severity: blocker, verified live 2026-06-14): the monthly calendar
+URL is ``https://db.netkeiba.com/race/list/{YYYYMM}/``. An earlier assumption
+used the ``race/calendar/{YYYYMM}/`` path segment, but live probing found that
+form returns ~40-52KB of navigation HTML with ZERO ``/race/list/{8d}/`` day
+links. The correct form ``/race/list/{YYYYMM}/`` (same path prefix as the
+per-day URL, 6 digits instead of 8) returns exactly the racing days for that
+month with the identical relative ``/race/list/{8d}/`` href shape that
+``parse_calendar_month_html`` already expects. The per-day blind-construction
+strategy is deliberately avoided: a non-racing day's ``/race/list/{YYYYMMDD}/``
+page silently returns the PREVIOUS racing day's race links.
+
 Key invariants (all guarded by tests in ``tests/scraper/test_enumeration.py``):
 
 1. **Cycle-1 HIGH #1** -- ``race_date`` comes from the enclosing day, NEVER
@@ -74,7 +85,9 @@ def parse_calendar_month_html(html: str) -> list[tuple[str, datetime.date]]:
     Parameters
     ----------
     html : str
-        Raw HTML of ``https://db.netkeiba.com/race/calendar/{YYYYMM}/``.
+        Raw HTML of ``https://db.netkeiba.com/race/list/{YYYYMM}/`` (UAT-Test-6
+        verified working form; the prior ``race/calendar/{YYYYMM}/`` form
+        returns zero day links).
 
     Returns
     -------
@@ -166,9 +179,15 @@ def enumerate_race_day_urls(
 ) -> list[tuple[str, datetime.date]]:
     """Fetch and parse one month of the netkeiba calendar.
 
-    Builds the calendar URL ``https://db.netkeiba.com/race/calendar/{YYYYMM}/``
+    Builds the calendar URL ``https://db.netkeiba.com/race/list/{YYYYMM}/``
     (absolute via ``urljoin``), calls ``fetch_html``, and delegates parsing to
     ``parse_calendar_month_html`` (which yields already-absolutized day URLs).
+
+    UAT-Test-6 (severity: blocker): the previous ``race/calendar/{YYYYMM}/``
+    form returns ~40-52KB of navigation HTML with ZERO day links on the live
+    site; ``/race/list/{YYYYMM}/`` is the verified working form (probed
+    2026-06-14: 2023-06 -> 8 days, 2023-02 -> 8 days, with the same relative
+    ``/race/list/{8d}/`` href shape ``parse_calendar_month_html`` expects).
 
     Parameters
     ----------
@@ -184,7 +203,7 @@ def enumerate_race_day_urls(
         ``fetch_html`` returns ``None`` for the calendar page -- the caller
         (``enumerate_races``) decides whether to retry.
     """
-    calendar_url = urljoin(BASE_URL, f"/race/calendar/{year}{month:02d}/")
+    calendar_url = urljoin(BASE_URL, f"/race/list/{year}{month:02d}/")
     html = fetch_html(calendar_url)
     if html is None:
         logger.warning(
