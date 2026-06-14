@@ -440,7 +440,23 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> Dict:
     if grade_haystack:
         grade_token = _GRADE_TOKEN_RE.search(grade_haystack)
         if grade_token:
-            grade = grade_token.group(1)
+            raw = grade_token.group(1)
+            # CR-02 (Phase 04 review): normalize the captured token to the
+            # bare form documented in RaceSchema.grade ("G1/G2/G3/G/listed
+            # or empty"). The Kaggle-side ``リステッド・重賞競走`` source
+            # column carries bare tokens, and Phase 6 joins scraped rows
+            # against Kaggle rows on this column -- a parenthesized '(L)'
+            # would silently produce None on the join and corrupt any
+            # feature keyed off grade.
+            #   * strip surrounding parens (half-width ``()`` and
+            #     full-width ``（）``) so '(L)' -> 'L'.
+            #   * normalize the bare CJK ``リステッド`` alternative to 'L'
+            #     for consistency with the schema's documented form.
+            #   * graded tokens (GI/GII/GIII/G1/.../JG*) are already bare
+            #     and pass through unchanged.
+            grade = raw.strip("()（）")
+            if grade == "リステッド":
+                grade = "L"
 
     # grade_revision: ``第N回`` in the race name (e.g. ``第89回東京優駿``).
     # Search grade_haystack (covers the grade-bearing <h1> path too).
