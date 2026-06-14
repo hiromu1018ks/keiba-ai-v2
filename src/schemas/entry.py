@@ -94,12 +94,24 @@ class EntrySchema(BaseModel):
     # Physical measurements (rows 61-62) -- per D-05: pre_race=True
     horse_weight: Optional[int] = Field(
         default=None,
-        description="Horse weight in kg, measured on race day (馬体重)",
+        description=(
+            "Horse weight in kg, measured on race day (馬体重). "
+            "NOTE (WR-06): the standard-layer Parquet stores this as Float64 "
+            "(Kaggle double); the int annotation is documentation only and "
+            "does NOT change the runtime dtype. See "
+            "src/scraper/normalizer.py:SCHEMA_DTYPE_MAP[EntrySchema]."
+        ),
         json_schema_extra={"pre_race": True, "table": "entry"},
     )
     weight_change: Optional[int] = Field(
         default=None,
-        description="Weight change from previous race, can be negative (場体重増減)",
+        description=(
+            "Weight change from previous race, can be negative (場体重増減). "
+            "NOTE (WR-06): the standard-layer Parquet stores this as Float64 "
+            "(Kaggle double); the int annotation is documentation only and "
+            "does NOT change the runtime dtype. See "
+            "src/scraper/normalizer.py:SCHEMA_DTYPE_MAP[EntrySchema]."
+        ),
         json_schema_extra={"pre_race": True, "table": "entry"},
     )
 
@@ -115,7 +127,13 @@ class EntrySchema(BaseModel):
     # horse/race characteristics, then compare against odds for EV calculation.
     popularity: Optional[int] = Field(
         default=None,
-        description="Betting popularity rank (人気) -- post-race for feature purposes",
+        description=(
+            "Betting popularity rank (人気) -- post-race for feature purposes. "
+            "NOTE (WR-06): the standard-layer Parquet stores this as Float64 "
+            "(Kaggle double); the int annotation is documentation only and "
+            "does NOT change the runtime dtype. See "
+            "src/scraper/normalizer.py:SCHEMA_DTYPE_MAP[EntrySchema]."
+        ),
         json_schema_extra={"pre_race": False, "table": "entry"},
     )
     win_odds: Optional[float] = Field(
