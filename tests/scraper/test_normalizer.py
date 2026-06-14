@@ -699,6 +699,48 @@ class TestPartitionedOutput:
             f"(CR-02: merge-dedup should not silently break the dtype contract)"
         )
 
+    def test_merge_dedup_rejects_column_drift(
+        self, tmp_standard_dir: Path
+    ) -> None:
+        """WR-02 -- when the existing parquet's column set differs from the
+        new partition's (schema drift from a prior run), the merge is SKIPPED
+        and only the new (correctly-typed) partition is written.
+
+        Without this guard, ``pd.concat`` would take the UNION of columns and
+        a stale column would survive into the output Parquet, polluting the
+        standard layer. Pre-seed a race partition with an EXTRA ``stale_col``
+        that is not in RaceSchema, then run a same-month normalize and verify
+        the stale column does NOT survive.
+        """
+        target_dir = tmp_standard_dir / "scraped" / "202201"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / "race.parquet"
+
+        # Pre-seed with the full RaceSchema column set PLUS a stale_col that
+        # does not belong. (Using the full schema column set ensures the drift
+        # is the EXTRA column, not a missing one -- both directions are drift.)
+        stale_row = {
+            "race_id": "202201010101",
+            "race_date": "2022-01-01",
+        }
+        stale_df = _build_typed_dataframe([stale_row], RaceSchema)
+        stale_df["stale_col"] = "should_not_survive"
+        stale_df.to_parquet(target_path, engine="pyarrow", index=False)
+
+        # Run a 2022-01 batch with a valid race.
+        race_new = _flat_race_dict(race_id="202201050101", race_date="2022-01-05")
+        normalize_to_parquet([race_new], standard_dir=tmp_standard_dir)
+
+        back = pd.read_parquet(target_path, engine="pyarrow")
+        # The stale column did NOT survive (column-set drift -> new-only write).
+        assert "stale_col" not in back.columns, (
+            f"stale_col survived merge-dedup (WR-02): columns={list(back.columns)}"
+        )
+        # The new race row IS present.
+        assert "202201050101" in back["race_id"].astype(str).tolist()
+        # The output column set matches RaceSchema exactly (no drift leaked).
+        assert list(back.columns) == list(RaceSchema.model_fields.keys())
+
     def test_entry_result_partitioned_via_partition_map(
         self, tmp_standard_dir: Path
     ) -> None:

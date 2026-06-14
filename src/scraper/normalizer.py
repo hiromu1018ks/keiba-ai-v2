@@ -537,17 +537,34 @@ def write_partitioned_parquet(
         if target_path.exists():
             try:
                 existing_df = pd.read_parquet(target_path, engine="pyarrow")
-                merged = pd.concat(
-                    [existing_df, new_partition_df], ignore_index=True
-                )
-                merged = merged.drop_duplicates(
-                    subset=[primary_key], keep="last"
-                )
-                merged = merged.reset_index(drop=True)
-                # Re-cast to the same dtype map to preserve nullable dtypes
-                # (read_parquet may down-cast nullable types).
-                merged = _recast_for_storage(merged, table_name)
-                write_df = merged
+                # WR-02: column-set equality guard. If a prior run wrote with
+                # a different schema (extra/dropped/renamed column), concat
+                # would take the UNION of columns and a stale column would
+                # survive into the output Parquet, polluting the standard
+                # layer that Phase 6 joins against Kaggle. On mismatch, log a
+                # warning and write ONLY the new (correctly-typed) partition.
+                existing_cols = list(existing_df.columns)
+                new_cols = list(new_partition_df.columns)
+                if existing_cols != new_cols:
+                    logger.warning(
+                        f"write_partitioned_parquet({table_name!r}): existing "
+                        f"parquet columns {existing_cols} != new partition "
+                        f"columns {new_cols} at {target_path}; schema drift "
+                        f"detected -- writing new partition only"
+                    )
+                    write_df = new_partition_df
+                else:
+                    merged = pd.concat(
+                        [existing_df, new_partition_df], ignore_index=True
+                    )
+                    merged = merged.drop_duplicates(
+                        subset=[primary_key], keep="last"
+                    )
+                    merged = merged.reset_index(drop=True)
+                    # Re-cast to the same dtype map to preserve nullable dtypes
+                    # (read_parquet may down-cast nullable types).
+                    merged = _recast_for_storage(merged, table_name)
+                    write_df = merged
             except Exception as e:
                 logger.warning(
                     f"write_partitioned_parquet({table_name!r}): failed to "
