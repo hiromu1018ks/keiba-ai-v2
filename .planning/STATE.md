@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-05 complete
-last_updated: "2026-06-14T01:23:01.000Z"
-last_activity: 2026-06-14 -- Plan 04-05 complete (strict-typed normalizer: SCHEMA_DTYPE_MAP + _build_typed_dataframe + write_partitioned_parquet with merge-dedup + partition_map + 30 tests)
+stopped_at: Phase 4 plan 04-06 complete (phase 04 done)
+last_updated: "2026-06-14T01:43:00.000Z"
+last_activity: 2026-06-14 -- Plan 04-06 complete (orchestrator + public re-exports + full-chain e2e + dtype-fidelity; phase 04 done)
 progress:
   total_phases: 10
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 19
-  completed_plans: 18
-  percent: 95
+  completed_plans: 19
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 04 — scraping-infrastructure-race-data
+**Current focus:** Phase 04 — scraping-infrastructure-race-data COMPLETE; ready for next phase
 
 ## Current Position
 
-Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
-Plan: 5 of 6 done in phase 04 (04-01, 04-02, 04-03, 04-04, 04-05 complete; 04-06 orchestrator pending)
-Status: Plan 04-05 complete; ready for 04-06 (orchestrator — final integration: FetcherSession + parser + normalizer + __init__ re-exports + end-to-end fixture test)
-Last activity: 2026-06-14 -- Plan 04-05 complete (strict-typed normalizer: SCHEMA_DTYPE_MAP + _build_typed_dataframe + write_partitioned_parquet with merge-dedup + partition_map + 30 tests)
+Phase: 04 (scraping-infrastructure-race-data) — COMPLETE (all 6 plans done)
+Plan: 6 of 6 done in phase 04 (04-01 through 04-06 all complete)
+Status: Plan 04-06 complete; phase 04 done (orchestrator + public re-exports + full-chain e2e + dtype-fidelity). Ready for next phase per ROADMAP.
+Last activity: 2026-06-14 -- Plan 04-06 complete (orchestrator wires enumerate->fetch->parse->normalize with Cycle-2 #5 injectable fetch_html boundary; live=False raises ValueError without transport; public re-exports added to __init__.py; TestFullChainE2E + TestSchemaCompatibility + TestRunScrape pass)
 
-Progress: [█████████░] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [█████████░] 95%
 | Phase 04 P04 | 1500 | 4 tasks | 8 files |
 | Phase 04 P03 | 302 | 2 tasks | 2 files |
 | Phase 04 P05 | 352 | 2 tasks | 2 files |
+| Phase 04 P06 | 840 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,11 @@ Recent decisions affecting current work:
 - [Phase 04 P05]: CYCLE-2 #6 resolved — EntrySchema/ResultSchema have NO race_date column; write_partitioned_parquet accepts partition_map (race_id->race_date) for entry/result tables; calling without partition_map raises KeyError mentioning "partition_map" (fail loud, not silent mis-partition); normalize_to_parquet builds partition_map from filtered race_df.
 - [Phase 04 P05]: CYCLE-1 MEDIUM — normalize_to_parquet does NOT call audit_leakage; popularity/win_odds are intentionally in entry table per D-06/D-03; leakage audit reserved for feature-layer generation.
 - [Phase 04 P05]: CYCLE-1 HIGH #7/#8 stay resolved — _build_typed_dataframe reindexes to Schema.model_fields (empty input -> typed zero-row DF with ALL columns); output is date-partitioned under data/standard/scraped/{YYYYMM}/ (no single-file overwrite pattern _scraped.parquet).
+- [Phase 04 P06]: CYCLE-2 #5 resolved — run_scrape(live=False, fetch_html=transport) provides the injectable fetch boundary that the full-chain e2e test uses; REAL enumerate_races + parse_race_html + normalize_to_parquet run with only the network boundary mocked.
+- [Phase 04 P06]: CYCLE-1 MEDIUM resolved — live=False without fetch_html now RAISES ValueError (network forbidden); live is no longer a dead parameter. Two valid modes: live=True (real browser+NW) OR live=False + fetch_html (offline).
+- [Phase 04 P06]: CYCLE-3 #2 resolved — offline path passes fetch_callable=transport to fetch_race_html so a race NOT pre-saved is fetched via the transport; transport returning None is handled gracefully (race skipped, others proceed), not AttributeError.
+- [Phase 04 P06]: CYCLE-2 #7 resolved — TestSchemaCompatibility asserts physical-type EQUALITY for Kaggle-NON-null columns + deliberate promotion (null->bool/string) for Kaggle-null columns. Unachievable Cycle-1 'equality on every overlapping column' replaced (pandas nullable boolean serializes to Arrow bool even for all-None cols).
+- [Phase 04 P06]: Cycle-1 HIGH #3 final step — src/scraper/__init__.py transitions from import-safe empty marker to public re-exports (10 symbols: FetcherSession, fetch_race_html, fetch_with_retry, enumerate_races, enumerate_race_day_urls, enumerate_races_for_day, parse_race_html, normalize_to_parquet, RaceRef, run_scrape).
 
 ### Pending Todos
 
@@ -128,6 +134,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T01:23:01.000Z
-Stopped at: Phase 4 plan 04-05 complete
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-05-SUMMARY.md
+Last session: 2026-06-14T01:43:00.000Z
+Stopped at: Phase 4 plan 04-06 complete (phase 04 done)
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-06-SUMMARY.md
