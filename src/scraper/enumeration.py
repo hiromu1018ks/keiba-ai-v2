@@ -41,8 +41,13 @@ from src.scraper.models import RaceRef
 BASE_URL: str = "https://db.netkeiba.com"
 
 # Regex used to locate race-day links in the monthly calendar HTML. The 8-digit
-# segment encodes YYYYMMDD.
-_RACE_DAY_HREF_RE = re.compile(r"/race/list/(\d{8})/?")
+# segment encodes YYYYMMDD. The trailing ``(?:/|$)`` is CRITICAL (CR-01): it
+# anchors the 8-digit run so a malformed href with MORE than 8 digits
+# (``/race/list/2022010512/``) is REJECTED rather than silently
+# prefix-truncated to ``20220105``. ``re.search`` is used below, so without this
+# anchor any >8-digit numeric prefix would match the leading 8 chars and
+# produce a wrong ``race_day_date``.
+_RACE_DAY_HREF_RE = re.compile(r"/race/list/(\d{8})(?:/|$)")
 
 # Regex used to locate individual race links on a race-day page. Captures any
 # numeric segment (not just 12 digits) so malformed hrefs like

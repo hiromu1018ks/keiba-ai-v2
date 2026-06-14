@@ -89,6 +89,40 @@ class TestParseCalendarMonthHtml:
         result = parse_calendar_month_html(html)
         assert len(result) == 1
 
+    def test_rejects_long_digit_run_in_day_href(self) -> None:
+        """CR-01: a >8-digit ``/race/list/{N}/`` href is DROPPED, not
+        prefix-truncated. Previously ``_RACE_DAY_HREF_RE`` was unanchored and
+        ``.search()`` would match the leading 8 digits of a longer run,
+        silently emitting a wrong ``race_day_date`` (e.g. ``2022010512`` ->
+        ``2022-01-05``) that corrupts the partition key."""
+        # 10-digit run -> must be rejected entirely.
+        html = '<a href="/race/list/2022010512/">bad</a>'
+        result = parse_calendar_month_html(html)
+        assert result == [], f"expected empty, got {result}"
+
+        # 11-digit run -> also rejected.
+        html = '<a href="/race/list/20220105123/">bad</a>'
+        result = parse_calendar_month_html(html)
+        assert result == [], f"expected empty, got {result}"
+
+        # 8 digits + non-slash suffix -> also rejected (the 8-digit run must
+        # be followed by '/' or end-of-string).
+        html = '<a href="/race/list/20220105xyz/">bad</a>'
+        result = parse_calendar_month_html(html)
+        assert result == [], f"expected empty, got {result}"
+
+        # Sanity: a valid 8-digit href WITH a trailing slash still matches.
+        html = '<a href="/race/list/20220105/">ok</a>'
+        result = parse_calendar_month_html(html)
+        assert len(result) == 1
+        assert result[0][1] == datetime.date(2022, 1, 5)
+
+        # Sanity: a valid 8-digit href WITHOUT a trailing slash also matches.
+        html = '<a href="/race/list/20220105">ok</a>'
+        result = parse_calendar_month_html(html)
+        assert len(result) == 1
+        assert result[0][1] == datetime.date(2022, 1, 5)
+
 
 class TestParseRaceDayHtml:
     """parse_race_day_html: builds RaceRef with date from the day argument."""
