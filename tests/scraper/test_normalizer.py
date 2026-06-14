@@ -619,6 +619,86 @@ class TestPartitionedOutput:
             "Duplicate race_id survived -- Cycle-2 #4 merge-dedup failed"
         )
 
+    def test_merge_dedup_falls_back_when_existing_column_not_coercible(
+        self, tmp_standard_dir: Path
+    ) -> None:
+        """CR-02 -- a non-coercible existing column triggers fallback to
+        new-only write (rather than silently merging with a broken dtype).
+
+        Pre-seed the result partition with a ``finish_position`` column stored
+        as non-numeric text (``"not_a_number"``). The merge-dedup path reads
+        this, calls ``_recast_for_storage`` to coerce back to Int64, which
+        raises ``TypeError``. The caller's ``except Exception`` then falls back
+        to writing only the NEW (correctly-typed) partition. The bad row is
+        dropped; the new row survives with the strict Int64 dtype.
+        """
+        target_dir = tmp_standard_dir / "scraped" / "202201"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / "result.parquet"
+
+        # Build a result row with the FULL ResultSchema column set so the
+        # read-merge-dedup path does not trip the WR-02 column-set guard; we
+        # want to exercise the dtype-coercion failure path specifically.
+        # We construct the bad DataFrame directly (NOT via _build_typed_dataframe,
+        # which would itself raise on the non-coercible value) and write it
+        # with object-typed finish_position.
+        schema_cols = list(ResultSchema.model_fields.keys())
+        bad_row = {
+            "horse_race_id": "20220105010199",
+            "race_id": "202201050101",
+            "finish_position": "not_a_number",  # non-coercible to Int64
+            "finish_note": None,
+            "finish_time": None,
+            "margin": None,
+            "corner_1": None,
+            "corner_2": None,
+            "corner_3": None,
+            "corner_4": None,
+            "last_3f": None,
+            "prize_money": None,
+        }
+        bad_df = pd.DataFrame([bad_row], columns=schema_cols)
+        bad_df.to_parquet(target_path, engine="pyarrow", index=False)
+
+        # Now run a normalize that targets the SAME partition with a valid row.
+        # The merge-dedup path should detect the non-coercible existing column
+        # and fall back to writing only the new partition.
+        good_row = {
+            "horse_race_id": "20220105010101",
+            "race_id": "202201050101",
+            "finish_position": 1,
+            "finish_note": None,
+            "finish_time": "1:48.0",
+            "margin": None,
+            "corner_1": 1,
+            "corner_2": 1,
+            "corner_3": 1,
+            "corner_4": 1,
+            "last_3f": 34.0,
+            "prize_money": 700.0,
+        }
+        good_df = _build_typed_dataframe([good_row], ResultSchema)
+        partition_map = {"202201050101": datetime.date(2022, 1, 5)}
+        write_partitioned_parquet(
+            "result",
+            good_df,
+            tmp_standard_dir,
+            partition_map=partition_map,
+            primary_key="horse_race_id",
+        )
+
+        # The written parquet should NOT contain the bad string value.
+        back = pd.read_parquet(target_path, engine="pyarrow")
+        assert "not_a_number" not in back["finish_position"].astype(str).tolist()
+        # The good row survived.
+        assert "20220105010101" in back["horse_race_id"].astype(str).tolist()
+        # The dtype is the strict nullable Int64 (or plain int64 after a
+        # read_parquet round-trip on a non-null column).
+        assert str(back["finish_position"].dtype) in {"Int64", "int64"}, (
+            f"finish_position dtype was {back['finish_position'].dtype!r} "
+            f"(CR-02: merge-dedup should not silently break the dtype contract)"
+        )
+
     def test_entry_result_partitioned_via_partition_map(
         self, tmp_standard_dir: Path
     ) -> None:

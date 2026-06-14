@@ -574,6 +574,13 @@ def _recast_for_storage(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     ``pd.read_parquet`` can convert nullable ``Int64`` / ``Float64`` /
     ``boolean`` back to ``int64`` / ``float64`` / ``object``. We re-cast so
     the merge-dedup output preserves the strict dtype contract.
+
+    CR-02: a coercion failure here is RE-RAISED as ``TypeError`` rather than
+    swallowed. The caller (``write_partitioned_parquet``) wraps this in a
+    ``try/except Exception`` and falls back to writing only the NEW partition
+    (which IS correctly typed via ``_build_typed_dataframe``). This prevents
+    a non-coercible existing column from silently breaking the strict-dtype
+    contract on the merge-dedup path.
     """
     schema_map = {
         "race": RaceSchema,
@@ -590,11 +597,16 @@ def _recast_for_storage(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
             continue
         try:
             out[col] = out[col].astype(target)
-        except (TypeError, ValueError):
-            # Best-effort recast: leave as-is if the column cannot be coerced
-            # (e.g. mixed object that survived an earlier write). The strict
-            # path in _build_typed_dataframe enforces dtype on fresh data.
-            pass
+        except (TypeError, ValueError) as e:
+            # CR-02: propagate so the caller's ``except Exception`` falls back
+            # to writing the new (correctly-typed) partition only. Swallowing
+            # here would silently write the merge with a broken dtype,
+            # defeating the strict-dtype guarantee that _build_typed_dataframe
+            # enforces on fresh data.
+            raise TypeError(
+                f"_recast_for_storage: column {col!r} in {table_name!r} existing "
+                f"parquet cannot be coerced to {target!r} during merge-dedup: {e}"
+            ) from e
     return out
 
 
