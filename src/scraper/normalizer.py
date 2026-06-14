@@ -734,12 +734,25 @@ def normalize_to_parquet(
                 ~result_df["race_id"].isin(dropped_race_ids)
             ].reset_index(drop=True)
 
-    # Integrity validation (warnings only; caller decides).
+    # Integrity validation. WR-07: HARD violations (duplicate primary keys,
+    # FK orphans) RAISE -- a duplicate race_id in the race table means the
+    # Phase-6 join produces ambiguous matches against Kaggle, and writing
+    # silently-corrupt Parquet is worse than failing loud. SOFT violations
+    # (e.g. entry/result 1-to-1 cardinality mismatch detected after the
+    # per-table uniqueness checks) remain warnings -- the caller may inspect
+    # the return value.
     violations = validate_integrity(race_df, entry_df, result_df)
     if violations:
         logger.warning(
             f"normalize_to_parquet: {len(violations)} integrity violation(s) "
-            f"detected (logged as warnings; output still written)"
+            f"detected (logged as warnings; hard violations raise below)"
+        )
+    hard_violations = [v for v in violations if "duplicate" in v or "orphan" in v]
+    if hard_violations:
+        raise ValueError(
+            f"normalize_to_parquet: {len(hard_violations)} hard integrity "
+            f"violation(s) detected (duplicate primary keys / FK orphans); "
+            f"refusing to write corrupt Parquet. First 3: {hard_violations[:3]}"
         )
 
     # Cycle-2 #6: build partition_map from the FILTERED race DataFrame so

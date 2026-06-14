@@ -547,6 +547,35 @@ class TestIntegrityValidation:
         assert violations == []
 
 
+class TestHardIntegrityViolationsRaise:
+    """WR-07 -- normalize_to_parquet RAISES on hard integrity violations
+    (duplicate primary keys, FK orphans) rather than writing silently-corrupt
+    Parquet. Soft violations (e.g. entry/result 1-to-1 cardinality mismatch)
+    remain warnings."""
+
+    def test_duplicate_race_id_raises(self, tmp_standard_dir: Path) -> None:
+        """Two parsed races with the SAME race_id -> hard violation -> raise."""
+        race_a = _flat_race_dict(race_id="202201050101", race_date="2022-01-05")
+        race_b = _flat_race_dict(race_id="202201050101", race_date="2022-01-05")
+        with pytest.raises(ValueError) as excinfo:
+            normalize_to_parquet([race_a, race_b], standard_dir=tmp_standard_dir)
+        msg = str(excinfo.value)
+        assert "hard integrity violation" in msg
+        assert "duplicate" in msg
+
+    def test_orphan_fk_raises(self, tmp_standard_dir: Path) -> None:
+        """An entry referencing a race_id not in the race table -> hard
+        violation (FK orphan) -> raise."""
+        race = _flat_race_dict(race_id="202201050101", race_date="2022-01-05")
+        # Corrupt: change one entry's race_id to an orphan value.
+        race["entries"][0]["race_id"] = "999999999999"  # not in race table
+        with pytest.raises(ValueError) as excinfo:
+            normalize_to_parquet([race], standard_dir=tmp_standard_dir)
+        msg = str(excinfo.value)
+        assert "hard integrity violation" in msg
+        assert "orphan" in msg
+
+
 # ---------------------------------------------------------------------------
 # TestPartitionedOutput
 # ---------------------------------------------------------------------------
