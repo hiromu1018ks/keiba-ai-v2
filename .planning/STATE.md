@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 6 context gathered — 前提タスク: 本格スクレイプ(2022-2026/5)未実行、Phase 6 計画前に別実行が必要(DATA-05)"
-last_updated: "2026-06-14T12:26:34.380Z"
-last_activity: "2026-06-14 - Completed quick task 260614-mfq: enumerate_races に tqdm 進捗バーを追加"
+stopped_at: "Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration"
+last_updated: "2026-06-14T13:41:46.277Z"
+last_activity: "2026-06-14 - Completed 06-01: Kaggle D-01 (国際)->graded removal + D-02 nullable dtype regen to data/standard/kaggle/ subdir"
 progress:
   total_phases: 10
   completed_phases: 4
-  total_plans: 21
-  completed_plans: 21
-  percent: 40
+  total_plans: 24
+  completed_plans: 23
+  percent: 42
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 04 — scraping-infrastructure-race-data
+**Current focus:** Phase 06 — data-integration (06-01 complete; 06-02 next)
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-14 - Completed quick task 260614-mfq: enumerate_races に tqdm 進捗バーを追加
+Phase: 6
+Plan: 06-02 (next)
+Status: 06-01 complete; ready for 06-02 integration
+Last activity: 2026-06-14 - Completed 06-01: Kaggle D-01 (国際)->graded removal + D-02 nullable dtype regen to data/standard/kaggle/ subdir
 
-Progress: [██████████] 100%
+Progress: [████░░░░░░] 42%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [██████████] 100%
 | Phase 04 P06 | 840 | 3 tasks | 6 files |
 | Phase 04 P07 | 371 | 2 tasks | 3 files |
 | Phase 04 P08 | 223 | 3 tasks | 4 files |
+| Phase 06 P01 | 846 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,11 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 04 P07]: Rule 1 deviation — parse_race_html extended to harvest the second <h1> (grade-bearing, e.g. 第64回宝塚記念(GI)) into a grade_haystack fed to derive_race_flags + grade/grade_revision extraction. Required because removing the (国際) mapping exposed a latent bug: the bare <title> race_name lacks the GI token so GRADE_REGEX never fired, leaving the G1 fixture graded-less. Public race_name stays bare per Plan-04 P04.
 - [Phase ?]: [Phase 04 P08]: UAT-Test-6 FIX -- enumerate_race_day_urls now builds /race/list/{YYYYMM}/ (live-verified). Prior /race/calendar/ form returns 0 racing-day links. Two-layer regression guard: URL-contract test + golden calendar fixture parse test.
 - [Phase ?]: [Phase 04 P08]: Per-day blind-URL construction deliberately NOT adopted -- non-racing day's /race/list/{YYYYMMDD}/ page silently returns prior racing day's race links. Month-listing strategy avoids false attribution (T-04-18).
+- [Phase 06 P01]: D-01 applied — removed レース記号/(国際) -> race_flag_graded_stakes from KAGGLE_COLUMN_MAP (Kaggle side now matches Phase 4 P07 scraper-side decision). Graded detection on both corpora now comes from the single _GRADE_REGEX authority via derive_race_flags. Regenerated graded_stakes=True count = 838 (deterministic).
+- [Phase 06 P01]: D-02 applied — regenerated Kaggle race/entry/result Parquet to data/standard/kaggle/ subdir with SCHEMA_DTYPE_MAP nullable dtypes. Zero Arrow-null columns; race_flag_*=bool; distance=int64; win_odds/horse_weight=double. race_date stays string (MEDIUM #5 — code-authoritative contract supersedes CONTEXT.md datetime note).
+- [Phase 06 P01]: HIGH #2 cycle-3 resolved — convert(core_tables_subdir='kaggle') SKIPS odds/payoff writes entirely (not to root, subdir, or anywhere). Phase 5 seed at data/standard/{odds_trifecta,payoff}.parquet SHA-256 verified identical pre/post regen.
+- [Phase 06 P01]: HIGH #3 cycle-3 resolved — 06-01-T3 does NOT call run_all_validations against the 3-table kaggle/ subdir (it cannot pass — 5-table contract). 3-table-specific validation (schema column-set, Arrow dtype, grade-derivation determinism, validate_integrity on DataFrames) runs here. Full 8-point run_all_validations deferred to 06-03-T2 against unified root.
+- [Phase 06 P01]: BLOCKER-1 resolved — regenerated Kaggle race/entry/result written to data/standard/kaggle/ as a STABLE separate input path for 06-02 idempotent integration. _UNMAPPED_RACE_FLAGS expanded from 7 to 8 entries (graded_stakes added — its only text source mapping is now gone).
 
 ### Pending Todos
 
@@ -151,6 +157,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T08:57:37.660Z
-Stopped at: Phase 6 context gathered — 前提タスク: 本格スクレイプ(2022-2026/5)未実行、Phase 6 計画前に別実行が必要(DATA-05)
-Resume file: .planning/phases/06-data-integration/06-CONTEXT.md
+Last session: 2026-06-14T13:40:08Z
+Stopped at: Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration
+Resume file: .planning/phases/06-data-integration/06-01-SUMMARY.md

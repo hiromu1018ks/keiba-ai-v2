@@ -194,7 +194,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 06-01: D-01 `(国際)` removal + Kaggle-side grade detector (derive_race_flags) + D-02 nullable-dtype regen + odds/payoff snapshot-protected + 8-point verification with source_counts/stats (DATA-05)
+- [x] 06-01: D-01 `(国際)` removal + Kaggle-side grade detector (derive_race_flags) + D-02 nullable-dtype regen + odds/payoff snapshot-protected + 8-point verification with source_counts/stats (DATA-05)
 
 **Wave 2** *(blocked on 06-01)*
 
@@ -295,7 +295,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 3. Feature Engineering | 5/5 | Complete | 2026-06-12 |
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
-| 6. Data Integration | 0/3 | Planned | - |
+| 6. Data Integration | 1/3 | In Progress|  |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
