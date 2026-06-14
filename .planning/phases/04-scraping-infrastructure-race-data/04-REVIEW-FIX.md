@@ -1,219 +1,113 @@
 ---
 phase: 04-scraping-infrastructure-race-data
-fixed_at: 2026-06-14T12:00:00Z
+fixed_at: 2026-06-14T14:30:00Z
 review_path: .planning/phases/04-scraping-infrastructure-race-data/04-REVIEW.md
 iteration: 1
-findings_in_scope: 9
-fixed: 9
+findings_in_scope: 6
+fixed: 6
 skipped: 0
 status: all_fixed
 ---
 
-# Phase 04: Code Review Fix Report
+# Phase 04: Code Review Fix Report (Gap-Closure — Plans 04-07 / 04-08)
 
-**Fixed at:** 2026-06-14T12:00:00Z
+**Fixed at:** 2026-06-14T14:30:00Z
 **Source review:** `.planning/phases/04-scraping-infrastructure-race-data/04-REVIEW.md`
 **Iteration:** 1
+**Fix scope:** `critical_warning` (Critical + Warning only; Info findings IN-01..IN-03 excluded)
 
-**Summary:**
-- Findings in scope: 9 (2 Critical + 7 Warning; Info findings IN-01..IN-04 excluded per `fix_scope: critical_warning`)
-- Fixed: 9
+## Summary
+
+- Findings in scope: 6 (2 Critical + 4 Warning)
+- Fixed: 6
 - Skipped: 0
+- Status: all_fixed
 
-All 9 in-scope findings were applied as targeted, minimal edits matching the
-surrounding code style. Each fix was committed atomically (one commit per
-finding) with the regression tests the REVIEW.md "Fix" sections called for.
-The fixes collectively add 11 new tests. No source files were left in a broken
-state; no deferred lint items (see `deferred-items.md`) were touched.
+REVIEW.md の指摘事項 6 件（Critical 2 件 + Warning 4 件）をすべて適用・検証した。
+各修正は原子的にコミット（finding ごとに 1 コミット、関連するものは同ファイルで束ねて整理）。
+ソースファイルは壊れた状態を残さず、既存の回帰テストはすべて緑を維持。
+
+### Verification
+
+- `tests/scraper/test_parser.py`: 94 passed（ベースライン同等）。WR-03 で追加した `assert race["grade"] == "GI"` 表明も含めて緑。
+- `tests/scraper/` 全体: 212 passed, 1 skipped。
+- 全フェーズ回帰（fix 後）: 448 passed, 1 skipped。Phase 03 (feature-engineering) 等、他フェーズへの回帰なし。
+
+## Commits
+
+| Commit | Findings | Files |
+|--------|----------|-------|
+| `1aaf36b` | CR-01, WR-01 | `src/scraper/flag_crosswalk.py` |
+| `f1d3477` | CR-02 | `src/scraper/parser.py` |
+| `05e1d1f` | WR-02, WR-03 | `tests/scraper/test_parser.py` |
+| `e9d9cf2` | WR-04 | `src/scraper/parser.py` |
 
 ## Fixed Issues
 
-### CR-01: Calendar regex silently truncates malformed race-day hrefs
+### CR-01: `GRADE_PATTERNS` declared in `__all__` but never defined (ImportError)
 
-**Files modified:** `src/scraper/enumeration.py`, `tests/scraper/test_enumeration.py`
-**Commit:** `8bc81d0`
-**Applied fix:** Anchored `_RACE_DAY_HREF_RE` with a trailing `(?:/|$)` so the
-captured 8-digit run must be followed by `/` or end-of-string. A malformed
-`>8`-digit href (`/race/list/2022010512/`) is now REJECTED rather than
-prefix-truncated to `20220105`. Added `test_rejects_long_digit_run_in_day_href`
-covering 10-digit, 11-digit, and 8-digits-plus-suffix rejection vectors plus
-sanity checks that valid 8-digit hrefs (with and without trailing slash) still
-match.
+**Severity:** Critical
+**File:** `src/scraper/flag_crosswalk.py:210`
+**Commit:** `1aaf36b`
 
-### CR-02: Merge-dedup dtype contract silently broken by `_recast_for_storage`
+実証された `ImportError`。`__all__` に `GRADE_PATTERNS` が宣言されていたが、実際の正規表現は private な `_GRADE_REGEX`（line 119）であり、`GRADE_PATTERNS` は未定義だった。`from src.scraper.flag_crosswalk import GRADE_PATTERNS` が `ImportError`、`from ... import *` が `AttributeError` になる。テストが両 import path を叩かないため潜在化していた。Plan 04-04（commit `87539b0`）からの既存バグで、gap-closure では触れていなかったが実証済みのため今回修正。
 
-**Files modified:** `src/scraper/normalizer.py`, `tests/scraper/test_normalizer.py`
-**Commit:** `8b639e9`
-**Applied fix:** `_recast_for_storage` now re-raises `(TypeError, ValueError)`
-as `TypeError` instead of swallowing with `pass`. The caller in
-`write_partitioned_parquet` already wraps this in `try/except Exception` and
-falls back to writing only the new (correctly-typed) partition -- that becomes
-the safety net, and the strict-dtype contract is no longer silently broken.
-Added `test_merge_dedup_falls_back_when_existing_column_not_coercible` that
-pre-seeds a non-coercible `finish_position` and verifies the fallback drops the
-bad row while preserving the strict `Int64` dtype on the surviving new row.
+**Applied fix:** リポジトリ全体を `grep` し `GRADE_PATTERNS` の利用箇所がないことを確認した上で、`__all__` から `GRADE_PATTERNS` を削除（alias 追加ではなく export 削除を選択）。併せてセクションコメントの見出しを `GRADE_PATTERNS:` から `_GRADE_REGEX:` に修正し、将来の混同を防止。
 
-### WR-01: `parse_race_html` trusts filename stem as `race_id` without validation
+### CR-02: Listed レースの `grade` がリテラル `'(L)'`（カッコ付き）になり RaceSchema 仕様違反
 
-**Files modified:** `src/scraper/parser.py`, `tests/scraper/test_parser.py`
-**Commit:** `2547736`
-**Applied fix:** `parse_race_html` now validates the filename stem with
-`re.fullmatch(r"\d{12}", race_id)` at entry; a non-12-digit stem raises
-`ValueError` with a debuggable message. This mirrors `fetcher.py:290`'s
-validation-on-write and closes the direct-caller gap. Added
-`TestParseRaceHtmlFilenameValidation` (4 tests) covering non-numeric,
-too-short, too-long, and valid 12-digit stems.
+**Severity:** Critical
+**File:** `src/scraper/parser.py:439-443`
+**Commit:** `f1d3477`
 
-### WR-02: Merge-dedup has no column-set equality check
+ヒヤシンスS（L 馬券、race_id `202405010809`）の `grade` フィールドが `'(L)'`（カッコ付き）になった。`RaceSchema.grade` の docstring は `"G1/G2/G3/G/listed or empty"`（bare トークン）を要求し、Kaggle 側の `リステッド・重賞競走` ソース列も bare トークンを保持する。カッコ付きのままだと Phase 6 の Kaggle 結合でサイレントに NaN 化する恐れがあった。実証済み。
 
-**Files modified:** `src/scraper/normalizer.py`, `tests/scraper/test_normalizer.py`
-**Commit:** `2637e6c`
-**Applied fix:** `write_partitioned_parquet` now compares
-`list(existing_df.columns)` vs `list(new_partition_df.columns)` before the
-merge. On mismatch (schema drift from a prior run), it logs a warning and
-writes ONLY the new (correctly-typed) partition. This prevents a stale column
-from surviving the recast and polluting the standard layer. Added
-`test_merge_dedup_rejects_column_drift` that pre-seeds a race partition with
-an extra `stale_col` and verifies the stale column does NOT survive.
+**Applied fix:** キャプチャトークンからカッコを剥がし、`リステッド` を `'L'` に正規化。5 つのゴールデンフィクスチャで検証：`202405010809` の `grade` が `'(L)'` → `'L'`、`202309030811`（宝塚記念 GI）は `'GI'` のまま維持。
 
-### WR-03: `validate_integrity` check "d" is set-equality, not true 1-to-1 cardinality
+### WR-01: `_GRADE_REGEX` alternation order reversed (longest-match footgun)
 
-**Files modified:** `src/scraper/normalizer.py`, `tests/scraper/test_normalizer.py`
-**Commit:** `46ec3e6`
-**Applied fix:** Replaced the set-equality comparison in check (d) with a
-`Counter` (multiset) comparison, which naturally subsumes set equality AND
-per-table uniqueness. The diagnostic now also surfaces `count-mismatch` for
-keys present in both tables but with different counts. Added
-`test_detects_entry_result_cardinality_mismatch` covering the case the
-pre-existing set-equality would have missed (1 row in entry vs 100 rows in
-result, all the same id).
+**Severity:** Warning
+**File:** `src/scraper/flag_crosswalk.py:119`
+**Commit:** `1aaf36b`
 
-### WR-04: `_parse_finish_position_cell` surfaces horse-weight sentinels as `finish_note`
+`_GRADE_REGEX` の選択肢順序が `GI|GII|GIII` になっており、左most-match で `GII`/`GIII` が `GI` に誤判定される可能性があった。`parser.py:108` の `_GRADE_TOKEN_RE`（正しく長い順）と非対称。現在は真偽値の test 結果しか使わないため潜在していたが、`parser.py` 側のコメントが明示的にこの footgun を警告していた。
 
-**Files modified:** `src/scraper/parser.py`
-**Commit:** `0ae0df6`
-**Applied fix:** The primary mitigation (warning log on unparseable cells)
-already existed. Added a `_KNOWN_FINISH_NOTES` frozenset (`_NULL_FINISH_NOTES`
-union `{"降"}`) and a defense-in-depth check: if the surfaced `finish_note` is
-NOT in this set, emit an additional warning naming the suspicious value and
-pointing at column-header resolution (so a horse-weight sentinel like `計不` /
-`---` fed in by a header-resolution bug is visible). Known finish notes do not
-trigger the secondary warning. Verified manually that `計不` triggers the
-warning and `中`/`取`/`降` do not.
+**Applied fix:** 選択肢を `GIII|GII|GI`（長い順）に並び替え、`_GRADE_TOKEN_RE` と対称化。
 
-### WR-05: Calendar URL dedup misses trailing-slash variance
+### WR-02: `test_parser.py` module docstring still documents the removed `(国際)` → `graded_stakes` mapping
 
-**Files modified:** `src/scraper/enumeration.py`, `tests/scraper/test_enumeration.py`
-**Commit:** `78f0cfb`
-**Applied fix:** `parse_calendar_month_html` now normalizes the trailing slash
-via `.rstrip("/") + "/"` before dedup, so the same calendar day emitted in
-both forms (`/race/list/20220105/` and `/race/list/20220105`) collapses to a
-single canonical URL. Both forms resolve to the same netkeiba page, so
-canonicalizing on the trailing-slash form is safe. Added
-`test_deduplicates_trailing_slash_variance`.
+**Severity:** Warning
+**File:** `tests/scraper/test_parser.py:10-11`
+**Commit:** `05e1d1f`
 
-### WR-06: `EntrySchema.popularity` annotation drifts from its normalizer dtype
+モジュール docstring が、Plan 04-07 で削除された `(国際)` → `race_flag_graded_stakes` マッピングを未だ HIGH #6 不変条件として説明していた。コードと乖離。
 
-**Files modified:** `src/schemas/entry.py`
-**Commit:** `40e17af`
-**Applied fix:** Documentation-only. Added a `NOTE (WR-06)` to the
-descriptions of `popularity`, `horse_weight`, and `weight_change` flagging
-that the standard-layer Parquet stores these as `Float64` (Kaggle double) per
-`SCHEMA_DTYPE_MAP[EntrySchema]`, and that the `int` annotation is
-documentation only and does NOT change the runtime dtype. Per the REVIEW.md
-guidance, the runtime dtype map was NOT changed (it is correct for the join
-contract). No behavior change.
+**Applied fix:** docstring を Plan 04-07 の新契約（`(国際)` は国際指定マーカーであり graded ではない；真の重賞検出は GRADE_REGEX のみ）に更新。
 
-### WR-07: `validate_integrity` violations never raise even when they indicate corruption
+### WR-03: Misleading comment attributes `graded_stakes=True` to `(国際)` (now comes from `<h1>` GI token)
 
-**Files modified:** `src/scraper/normalizer.py`, `tests/scraper/test_normalizer.py`
-**Commit:** `62443b0`
-**Applied fix:** `normalize_to_parquet` now classifies violations as HARD
-(`"duplicate" in v or "orphan" in v` per the REVIEW.md fix sketch) vs SOFT.
-HARD violations raise `ValueError` (refusing to write corrupt Parquet); SOFT
-violations remain warnings. Added `TestHardIntegrityViolationsRaise` (2 tests)
-asserting `normalize_to_parquet` raises on a duplicate `race_id` and on an
-orphan entry `race_id`. This is flagged as `requires human verification` for
-logic correctness -- the classification criteria (the `"duplicate"`/`"orphan"`
-substring match) follow the REVIEW.md sketch literally; confirm the soft/hard
-boundary matches intent.
+**Severity:** Warning
+**File:** `tests/scraper/test_parser.py:430`
+**Commit:** `05e1d1f`
 
-## Skipped Issues
+`test_flag_crosswalk_applied_on_graded_fixture` のコメントが、`graded_stakes` を `(国際)` 由来と説明していた。実際は（Plan 04-07 の Rule-1 deviation で）`<h1>` の GI トークン由来。実証：`race_name` を空にして `derive_race_flags` を呼ぶと確認できる。
 
-None.
+**Applied fix:** コメントを GI トークン由来に修正。併せてレビュー提案通り `assert race["grade"] == "GI"` を追加（CR-02 を捕捉できたはずの表明。今後の回帰ガード）。
 
-## Verification
+### WR-04: `grade_haystack` passed as the `race_name` parameter to `derive_race_flags` (conflation)
 
-All verification ran inside the isolated worktree `/tmp/sv-04-reviewfix-pdqUI3`
-on branch `gsd-reviewfix/04-32806`. Commands and results:
+**Severity:** Warning
+**File:** `src/scraper/parser.py:467`
+**Commit:** `e9d9cf2`
 
-### Test suite (full scraper suite, final run after all 9 fixes)
+`grade_haystack`（`race_name` + `<h1>` テキストの結合）が `derive_race_flags` の `race_name` 仮引数に渡されており、2 つの関心が混在している。潜在的な結合：`<h1>` テキスト内の flag-marker トークンが `FLAG_CROSSWALK` の部分文字列マッチングに拾われる可能性。
 
-```
-python3 -m pytest tests/scraper/ -q
-  => 205 passed, 4 skipped, 1 failed in 9.71s
-```
+**Applied fix:** レビュー Option (a)（素の `race_name` を渡す）は UAT-Test-3 回帰テストを壊すことを実証（`derive_race_flags('... (国際)(指)(定量)', '宝塚記念')` → `graded_stakes=None`）。レビューの「UAT-Test-3 を壊さない最小変更」ガイダンスに従い、呼び出し箇所のコメントを拡充し、結合が意図的かつ負荷のかかる選択であること（GRADE_REGEX が haystack 全体を走査するため GI トークン検出に必要）を文書化（Option (b) フォールバック）。動作変更なし。
 
-The single failure is `TestCycle2RegressionGuards::test_kaggle_physical_type_equality_for_corners`,
-which is a PRE-EXISTING environment failure: it requires
-`data/standard/result.parquet` (a Kaggle-derived file) that does not exist in
-this worktree. This failure was present in the BASELINE (before any fix) and
-is NOT caused by any of the 9 fixes. Confirmed baseline:
-`194 passed, 4 skipped, 1 failed` before fixes; `205 passed, 4 skipped, 1
-failed` after (the +11 passed are the new regression tests; the same 1
-pre-existing failure and 4 skips remain unchanged).
+## Out of Scope (Info findings, not addressed this round)
 
-Per-finding test runs (all green):
+以下 3 件の Info finding は `fix_scope: critical_warning` のため対象外。必要に応じて別途対応。
 
-- CR-01: `pytest tests/scraper/test_enumeration.py -q` => 20 passed (was 19; +1 new)
-- CR-02: `pytest tests/scraper/test_normalizer.py::TestPartitionedOutput::test_merge_dedup_falls_back_when_existing_column_not_coercible` => 1 passed
-- WR-01: `pytest tests/scraper/test_parser.py::TestParseRaceHtmlFilenameValidation -q` => 4 passed
-- WR-02: `pytest tests/scraper/test_normalizer.py::TestPartitionedOutput::test_merge_dedup_rejects_column_drift -q` => 1 passed
-- WR-03: `pytest tests/scraper/test_normalizer.py::TestIntegrityValidation -q` => 6 passed (was 5; +1 new)
-- WR-04: `pytest tests/scraper/test_parser.py -q` => 94 passed (unchanged count; WR-04 adds a defense-in-depth warning, not a new test)
-- WR-05: `pytest tests/scraper/test_enumeration.py -q` => 20 passed (was 19; +1 new)
-- WR-06: `pytest tests/schemas/ -q` => 77 passed (documentation-only; no new tests)
-- WR-07: `pytest tests/scraper/test_normalizer.py::TestHardIntegrityViolationsRaise -q` => 2 passed
-
-Downstream-consumer check (WR-05 changed the yielded URL form):
-`pytest tests/scraper/test_end_to_end.py tests/scraper/test_orchestrator.py -q`
-=> 15 passed, 4 skipped (no regression).
-
-### Lint (ruff)
-
-```
-python3 -m ruff check src/scraper/enumeration.py src/scraper/normalizer.py src/scraper/parser.py src/schemas/entry.py
-  => All checks passed!
-
-python3 -m ruff check tests/scraper/test_enumeration.py tests/scraper/test_normalizer.py tests/scraper/test_parser.py
-  => Found 4 errors.
-```
-
-The 4 test-file errors are ALL pre-existing deferred items documented in
-`deferred-items.md` (F401 `pytest`, F821 `Callable`, F401 `typing.Callable`,
-F841 `bad_day_url` in `test_enumeration.py`). None are in code added by these
-fixes. Per the SCOPE BOUNDARY rule, these deferred items were NOT touched. The
-9 fixes introduced ZERO new ruff errors.
-
-### Manual verification (WR-04)
-
-Manually verified the defense-in-depth warning fires when a horse-weight
-sentinel (`計不`) is fed into `_parse_finish_position_cell`, and does NOT fire
-for known finish notes (`中`/`取`/`失`/`除`/`再`/`降`).
-
-### Notes on logic-class fixes (per verification_strategy)
-
-- **CR-02, WR-02, WR-07** involve control-flow / logic decisions (re-raise vs
-  swallow, drift detection, hard-vs-soft classification). Tier 1 + Tier 2
-  verification (re-read + ruff + targeted regression tests) passed. Flagged
-  for human verification of the soft/hard boundary and the fallback semantics
-  per the `logic bug limitation` rule.
-- **WR-03** (multiset comparison) and **CR-01** (regex anchor) have
-  comprehensive regression tests covering both the previously-undetected
-  failure modes and the valid-input sanity checks.
-
----
-
-_Fixed: 2026-06-14T12:00:00Z_
-_Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+- **IN-01** `src/scraper/flag_crosswalk.py:195` — haystack が `race_condition` 空の場合に `race_name` を除外する。
+- **IN-02** `src/scraper/parser.py:115` — `リステッド` 代替が bare CJK 文字列を `grade` に運ぶ（CR-02 の正規化で緩和済み）。
+- **IN-03** `tests/scraper/test_parser.py` — いずれのフィクスチャでも `grade` フィールド値を表明するテストがなかった（WR-03 で `assert race["grade"] == "GI"` を追加し緩和）。
