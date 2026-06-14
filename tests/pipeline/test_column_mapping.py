@@ -1,7 +1,9 @@
 """Unit tests for column mapping dicts and helper functions.
 
 Validates:
-- KAGGLE_COLUMN_MAP has exactly 66 entries, all (table, field) resolve to schema fields
+- KAGGLE_COLUMN_MAP has exactly 65 entries (66 CSV columns minus the
+  intentionally-unmapped レース記号/(国際) per Phase 6 D-01), all (table, field)
+  resolve to schema fields
 - ODDS_COLUMN_MAP has exactly 15 entries for trifecta columns from odds.csv
 - FLAG_COLUMNS has exactly 20 entries matching actual CSV headers
 - DTYPE_SPEC has exactly 25 entries (20 flags + 3 mixed-type + 2 zero-padded)
@@ -27,12 +29,19 @@ from src.pipeline.column_mapping import (
 
 
 class TestKaggleColumnMapping:
-    """Verify all 66 Kaggle race_result.csv column mappings."""
+    """Verify Kaggle race_result.csv column mappings (65 mapped + 1 unmapped)."""
 
     # The expected set of 66 Japanese column names from the actual CSV header.
     # Rows 1-8 are standard columns, rows 9-28 are flag columns, rows 29-66 are
     # the remaining standard columns. The 20 flag columns use the ACTUAL CSV
     # header names (with parentheses/brackets), not the shortened test names.
+    #
+    # NOTE (Phase 6 D-01): レース記号/(国際) IS in this set (it is still a CSV
+    # column and still listed in FLAG_COLUMNS), but it is NO LONGER a key in
+    # KAGGLE_COLUMN_MAP. (国際) is an international-designation marker, NOT a
+    # graded-stakes marker; true graded detection now comes from GRADE_REGEX via
+    # kaggle_converter._apply_grade_detection. INTENTIONALLY_UNMAPPED below
+    # documents this single deliberate exclusion.
     EXPECTED_JP_NAMES: set[str] = {
         # Row 1: Identification
         "レース馬番ID",
@@ -111,10 +120,16 @@ class TestKaggleColumnMapping:
         "賞金(万円)",
     }
 
-    def test_kaggle_column_map_has_66_entries(self) -> None:
-        """KAGGLE_COLUMN_MAP contains exactly 66 entries (one per CSV column)."""
-        assert len(KAGGLE_COLUMN_MAP) == 66, (
-            f"Expected 66 entries in KAGGLE_COLUMN_MAP, got {len(KAGGLE_COLUMN_MAP)}"
+    # Phase 6 D-01: CSV columns that are deliberately NOT mapped in
+    # KAGGLE_COLUMN_MAP. (国際) is an international-designation marker, NOT a
+    # graded-stakes marker, and graded detection now comes from GRADE_REGEX.
+    INTENTIONALLY_UNMAPPED: set[str] = {"レース記号/(国際)"}
+
+    def test_kaggle_column_map_has_65_entries(self) -> None:
+        """KAGGLE_COLUMN_MAP contains 65 entries (66 CSV cols minus the D-01 unmapped (国際))."""
+        assert len(KAGGLE_COLUMN_MAP) == 65, (
+            f"Expected 65 entries in KAGGLE_COLUMN_MAP "
+            f"(66 CSV cols - 1 D-01 unmapped), got {len(KAGGLE_COLUMN_MAP)}"
         )
 
     def test_every_mapping_resolves_to_schema_field(self) -> None:
@@ -133,14 +148,23 @@ class TestKaggleColumnMapping:
         )
 
     def test_all_jp_names_match_expected_set(self) -> None:
-        """Every Japanese column name in KAGGLE_COLUMN_MAP is in the expected 66-name set."""
+        """Every mapped Japanese name is in the expected 66-name CSV header set.
+
+        The reverse direction (CSV-header - map-keys) is allowed to contain
+        ONLY the documented INTENTIONALLY_UNMAPPED set (Phase 6 D-01:
+        レース記号/(国際)). Any other missing column is a regression.
+        """
         actual_names = set(KAGGLE_COLUMN_MAP.keys())
-        missing = self.EXPECTED_JP_NAMES - actual_names
         extra = actual_names - self.EXPECTED_JP_NAMES
+        missing = self.EXPECTED_JP_NAMES - actual_names
+        unexpected_missing = missing - self.INTENTIONALLY_UNMAPPED
 
         errors: list[str] = []
-        if missing:
-            errors.append(f"Missing from KAGGLE_COLUMN_MAP: {sorted(missing)}")
+        if unexpected_missing:
+            errors.append(
+                f"Unexpectedly missing from KAGGLE_COLUMN_MAP "
+                f"(not in INTENTIONALLY_UNMAPPED): {sorted(unexpected_missing)}"
+            )
         if extra:
             errors.append(f"Unexpected in KAGGLE_COLUMN_MAP: {sorted(extra)}")
 

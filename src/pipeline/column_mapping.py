@@ -65,7 +65,12 @@ KAGGLE_COLUMN_MAP: dict[str, tuple[str, str]] = {
     "レース記号/九州産馬": ("race", "race_flag_allowance"),
     "レース記号/見習騎手": ("race", "race_flag_apprentice"),
     "レース記号/せん": ("race", "race_flag_gelding_only"),
-    "レース記号/(国際)": ("race", "race_flag_graded_stakes"),
+    # D-01 / Phase 4 P07 UAT-Test-3: レース記号/(国際) is intentionally NOT mapped
+    # here. (国際) is an international-designation marker, NOT a graded-stakes
+    # marker. True graded detection comes from GRADE_REGEX (GI/GII/GIII/G1/G2/G3/
+    # JG*/重賞/ＧＩ...) via src/scraper/flag_crosswalk.py:derive_race_flags, which
+    # the Kaggle converter now invokes post-split (see kaggle_converter.
+    # _apply_grade_detection). FLAG_COLUMNS below still lists this CSV column.
     "レース記号/[指]": ("race", "race_flag_condition_race"),
     "レース記号/(特指)": ("race", "race_flag_special_weight"),
     # Row 29: Race number

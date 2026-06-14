@@ -26,22 +26,114 @@ from src.pipeline.column_mapping import (
     ODDS_COLUMN_MAP,
     get_columns_for_table,
 )
+from src.scraper.flag_crosswalk import derive_race_flags
 from src.schemas.audit import audit_leakage
 from src.schemas.entry import EntrySchema
 from src.schemas.race import RaceSchema
 
 
-# Flag fields defined in RaceSchema but not present in Kaggle CSV.
-# These will be added as None columns in the race table.
+# Flag fields defined in RaceSchema but with no text-derived source in the
+# Kaggle CSV. These will be added as pd.NA columns in the race table.
+#
+# Phase 6 D-01: race_flag_graded_stakes is NOW in this list. Previously it was
+# sourced from the レース記号/(国際) mapping, but that was a semantic error
+# ((国際) is an international-designation marker, NOT graded). True graded
+# detection now comes from _GRADE_REGEX via _apply_grade_detection (called
+# AFTER this list is materialized as pd.NA columns). Listed/stakes are also
+# regex-derived (only set True by derive_race_flags when (L)/リステッド or a
+# grade/重賞 token is present; the Kaggle CSV has no text columns for them).
 _UNMAPPED_RACE_FLAGS = [
     "race_flag_amateur",
     "race_flag_female_jockey",
+    "race_flag_graded_stakes",
     "race_flag_listed",
     "race_flag_maiden",
     "race_flag_mare_only",
     "race_flag_stakes",
     "race_flag_young_horse",
 ]
+
+
+def _apply_grade_detection(race_df: pd.DataFrame) -> pd.DataFrame:
+    """Re-derive graded/stakes/listed flags from the grade + race_name columns.
+
+    HIGH #1 cycle-3 fix (D-01): after removing the Kaggle-side
+    ``レース記号/(国際) -> race_flag_graded_stakes`` mapping, graded detection on
+    the Kaggle side must come from the SAME authority the scraper side uses:
+    ``src.scraper.flag_crosswalk._GRADE_REGEX`` via ``derive_race_flags``. This
+    helper reads each race row's ``grade`` (the リステッド・重賞競走 column) and
+    ``race_name`` (レース名) and OR-merges the regex-derived True values onto the
+    existing (text-derived) flag columns.
+
+    CRITICAL ORDERING: this helper MUST be called AFTER the
+    ``_UNMAPPED_RACE_FLAGS`` loop in ``split_race_entry_result`` so that all 20
+    ``race_flag_*`` columns already exist as pd.NA-filled nullable booleans
+    (notably ``race_flag_stakes`` / ``race_flag_listed`` / ``race_flag_graded_stakes``).
+    Calling it earlier KeyErrors on the missing column, OR has its OR-merge result
+    clobbered to pd.NA by the subsequent unmapped-flags write.
+
+    race_condition=' ' bypass (load-bearing): ``derive_race_flags`` early-returns
+    when ``race_condition`` is falsy (flag_crosswalk.py:184-185). For rows whose
+    ``grade`` is null we pass a SINGLE SPACE ``' '`` (NOT ``''``) so the haystack
+    ``f"{race_condition} {race_name}"`` is still built and ``_GRADE_REGEX`` can
+    match a GI token living in ``race_name`` alone (e.g. "東京優駿(G1)").
+
+    OR-merge semantics (WARNING-2): the merge is
+    ``race_df[col] = existing.fillna(False) | new.fillna(False)`` then
+    ``.astype('boolean')``. The ``fillna(False)`` on BOTH sides is load-bearing:
+    pandas treats ``True | pd.NA`` as ``<NA>`` (NOT ``True``), so without fillna
+    an existing True would be downgraded when the new value is None. After fillna,
+    ``True | False = True``, ``False | True = True``, ``False | False = False``.
+
+    Only 3 columns are touched: ``race_flag_graded_stakes``, ``race_flag_stakes``,
+    ``race_flag_listed`` (the 3 flags ``derive_race_flags`` can set to True for
+    graded/listed races). The other 17 flags keep their
+    ``convert_flags_to_bool``-derived values.
+    """
+    grade_targets = ("race_flag_graded_stakes", "race_flag_stakes", "race_flag_listed")
+    # All 3 target columns must exist (caller responsibility: run AFTER the
+    # _UNMAPPED_RACE_FLAGS loop). If any is missing, surface loudly rather than
+    # silently producing a column-less DataFrame.
+    missing_cols = [c for c in grade_targets if c not in race_df.columns]
+    if missing_cols:
+        raise KeyError(
+            f"_apply_grade_detection: expected race_flag columns {grade_targets} "
+            f"to already exist on race_df (HIGH #1 cycle-3 ordering contract); "
+            f"missing={missing_cols}. The helper MUST run AFTER the "
+            f"_UNMAPPED_RACE_FLAGS loop in split_race_entry_result."
+        )
+
+    # Build per-row derive_race_flags inputs.
+    has_grade = "grade" in race_df.columns
+    has_name = "race_name" in race_df.columns
+    per_row_results: list[dict] = []
+    for row in race_df.itertuples(index=False):
+        # itertuples returns namedtuple-like; use getattr with a safe default.
+        grade_val = getattr(row, "grade", None) if has_grade else None
+        race_name_val = getattr(row, "race_name", None) if has_name else None
+        # race_condition arg: grade text when present, else single space (bypass
+        # derive_race_flags' early-return guard at flag_crosswalk.py:184-185).
+        if pd.notna(grade_val) and str(grade_val).strip() != "":
+            cond = str(grade_val)
+        else:
+            cond = " "
+        name = str(race_name_val) if pd.notna(race_name_val) else ""
+        per_row_results.append(
+            derive_race_flags(race_condition=cond, race_name=name)
+        )
+
+    for col in grade_targets:
+        # Coerce existing to nullable boolean FIRST so .fillna(False) does not
+        # trigger pandas' object->bool downcasting FutureWarning. The column
+        # was created by either convert_flags_to_bool (already boolean) or the
+        # _UNMAPPED_RACE_FLAGS pd.NA write (object dtype); normalize here.
+        existing = race_df[col].astype("boolean")
+        new_values = [res.get(col) for res in per_row_results]
+        new_series = pd.Series(new_values, index=race_df.index, dtype="boolean")
+        merged = existing.fillna(False) | new_series.fillna(False)
+        race_df[col] = merged.astype("boolean")
+
+    return race_df
 
 
 def convert(
@@ -274,6 +366,12 @@ def split_race_entry_result(
     for str_col in ["horse_race_id", "race_id"]:
         if str_col in result_df.columns:
             result_df[str_col] = result_df[str_col].astype(str)
+
+    # HIGH #1 cycle-3: MUST run AFTER _UNMAPPED_RACE_FLAGS loop so
+    # race_flag_stakes / race_flag_listed / race_flag_graded_stakes exist as
+    # columns; calling earlier KeyErrors or has its OR-merge result clobbered
+    # to pd.NA by the subsequent pd.NA write in that loop.
+    race_df = _apply_grade_detection(race_df)
 
     return race_df, entry_df, result_df
 

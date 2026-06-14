@@ -235,16 +235,30 @@ class TestFlagConversion:
 
         # Get all flag column names (race_flag_*)
         flag_cols = [col for col in race_df.columns if col.startswith("race_flag_")]
-        # 20 CSV flag columns coalesce into 13 unique schema fields
-        # + 7 unmapped flags added as None = 20 total flag columns
+        # 20 CSV flag columns coalesce into 12 unique schema fields (the (国際)
+        # column no longer maps to graded_stakes per Phase 6 D-01)
+        # + 8 unmapped flags (incl. graded_stakes, now regex-derived) = 20 total.
         assert len(flag_cols) == 20
 
-        # All flag values should be True, None, or pd.NA
+        # Phase 6 D-01: the 3 grade-derived columns (graded_stakes, stakes,
+        # listed) are produced by _apply_grade_detection via an OR-merge that
+        # fills NA with False before merging, so non-graded rows can have a
+        # concrete False (not just True/NA). The other 17 flags stay True/NA.
+        grade_derived = {
+            "race_flag_graded_stakes", "race_flag_stakes", "race_flag_listed",
+        }
         for col in flag_cols:
             for val in race_df[col]:
-                assert pd.isna(val) or val is True, (
-                    f"Flag column '{col}' has unexpected value: {val!r}"
-                )
+                if col in grade_derived:
+                    # Allow True, False, or NA for grade-derived columns.
+                    assert pd.isna(val) or bool(val) in (True, False), (
+                        f"Grade-derived flag '{col}' has unexpected value: {val!r}"
+                    )
+                else:
+                    # Text-derived flags: only True or NA (never False).
+                    assert pd.isna(val) or bool(val) is True, (
+                        f"Flag column '{col}' has unexpected value: {val!r}"
+                    )
 
 
 class TestFinishPosition:
@@ -426,3 +440,195 @@ class TestParquetOutput:
             for call in mock_audit.call_args_list:
                 args, kwargs = call
                 assert len(args) >= 2  # model_classes and df
+
+
+class TestGradeDetection:
+    """HIGH #1 cycle-3: Kaggle-side grade detection via derive_race_flags.
+
+    After D-01 removes the レース記号/(国際) -> race_flag_graded_stakes mapping,
+    graded detection on the Kaggle side comes from _GRADE_REGEX (GI/GII/GIII/
+    G1/G2/G3/JG*/重賞/ＧＩ...) via src.scraper.flag_crosswalk.derive_race_flags,
+    invoked by kaggle_converter._apply_grade_detection AFTER the
+    _UNMAPPED_RACE_FLAGS loop.
+    """
+
+    def test_kaggle_graded_derivation_matches_regex(self) -> None:
+        """grade='G1' (half-width) sets graded_stakes=True via _GRADE_REGEX.
+
+        HIGH #1 cycle-3: the cycle-2 test used grade='GⅠ' (half-width G + FULL-
+        WIDTH Ⅰ U+FF21) which matched NEITHER the half-width 'GI' nor the
+        full-width 'ＧＩ' alternatives in _GRADE_REGEX and was silently
+        undetected. 'G1' matches the 'G3|G2|G1' alternation.
+        """
+        from src.pipeline.kaggle_converter import _apply_grade_detection
+
+        race_df = pd.DataFrame({
+            "grade": ["G1", None, None],
+            "race_name": ["普通レース", "(国際)特別", "東京優駿(G1)"],
+            # All 20 race_flag_* must exist (helper runs AFTER unmapped loop).
+            **{
+                f"race_flag_{n}": pd.NA
+                for n in [
+                    "handicap", "age_restricted", "filly_only", "colt_only",
+                    "gelding_only", "mare_only", "stallion_only", "apprentice",
+                    "amateur", "female_jockey", "young_horse", "condition_race",
+                    "special_weight", "bonus_weight", "stakes", "graded_stakes",
+                    "listed", "open", "maiden", "allowance",
+                ]
+            },
+        })
+        for col in race_df.columns:
+            if col.startswith("race_flag_"):
+                race_df[col] = race_df[col].astype("boolean")
+
+        out = _apply_grade_detection(race_df.copy())
+
+        # Row 0: grade='G1' -> graded_stakes=True (matches G3|G2|G1)
+        assert bool(out["race_flag_graded_stakes"].iloc[0]) is True, (
+            f"grade='G1' should set graded_stakes=True; got "
+            f"{out['race_flag_graded_stakes'].iloc[0]!r}"
+        )
+        # Row 1: grade=None, race_name='(国際)特別' -> NOT graded ((国際) is not
+        # a graded marker; only GI/G1/etc are). graded_stakes in {None, False}.
+        v1 = out["race_flag_graded_stakes"].iloc[1]
+        assert pd.isna(v1) or bool(v1) is False, (
+            f"grade=None + '(国際)特別' must NOT be graded; got {v1!r}"
+        )
+        # Row 2: grade=None, race_name='東京優駿(G1)' -> STILL graded (proves the
+        # race_condition=' ' bypass of derive_race_flags' early-return guard
+        # works — the GI token in race_name alone triggers _GRADE_REGEX).
+        assert bool(out["race_flag_graded_stakes"].iloc[2]) is True, (
+            f"race_name='東京優駿(G1)' with grade=null should STILL be graded "
+            f"(race_condition=' ' bypass); got "
+            f"{out['race_flag_graded_stakes'].iloc[2]!r}"
+        )
+
+    def test_grade_detection_preserves_existing_true(self) -> None:
+        """WARNING-2: OR-merge never downgrades an existing True to None.
+
+        Case A: convert_flags_to_bool already set race_flag_stakes=True for a
+        row, and derive_race_flags returns None for that column (no grade
+        token on this row). After _apply_grade_detection, the column STILL
+        has True for that row.
+
+        Case B (inverse): convert_flags_to_bool left race_flag_graded_stakes
+        as None, and derive_race_flags returns True; after the helper, the
+        column has True.
+        """
+        from src.pipeline.kaggle_converter import _apply_grade_detection
+
+        # Row 0: existing stakes=True, grade has no token -> derive returns
+        # None for stakes -> merge must preserve True.
+        # Row 1: existing graded_stakes=None, grade='G1' -> derive returns
+        # True for graded -> merge must produce True.
+        race_df = pd.DataFrame({
+            "grade": [None, "G1"],
+            "race_name": ["普通レース", "重賞"],
+            "race_flag_stakes": pd.array([True, pd.NA], dtype="boolean"),
+            "race_flag_graded_stakes": pd.array([pd.NA, pd.NA], dtype="boolean"),
+            "race_flag_listed": pd.array([pd.NA, pd.NA], dtype="boolean"),
+        })
+        out = _apply_grade_detection(race_df.copy())
+        # Case A: existing True preserved despite new None.
+        assert bool(out["race_flag_stakes"].iloc[0]) is True, (
+            f"OR-merge downgraded existing stakes=True to {out['race_flag_stakes'].iloc[0]!r}"
+        )
+        # Case B: new True merged onto existing None.
+        assert bool(out["race_flag_graded_stakes"].iloc[1]) is True, (
+            f"OR-merge failed to set graded_stakes=True from grade='G1'; "
+            f"got {out['race_flag_graded_stakes'].iloc[1]!r}"
+        )
+        # Case B also: grade='G1' sets BOTH graded_stakes AND stakes (a graded
+        # stakes is by definition a stakes).
+        assert bool(out["race_flag_stakes"].iloc[1]) is True, (
+            f"grade='G1' should set stakes=True too; got "
+            f"{out['race_flag_stakes'].iloc[1]!r}"
+        )
+
+    def test_apply_grade_detection_runs_after_unmapped_flags(self) -> None:
+        """HIGH #1 cycle-3 ordering regression guard.
+
+        After split_race_entry_result returns, the grade-derived True values
+        for race_flag_stakes and race_flag_listed must be present (not
+        clobbered to pd.NA by the _UNMAPPED_RACE_FLAGS loop). This guards
+        against a future refactor moving _apply_grade_detection back to line
+        ~248 (before the unmapped loop writes pd.NA over these columns).
+        """
+        from src.pipeline.kaggle_converter import split_race_entry_result
+
+        # Build a tiny raw-style DataFrame with a grade token.
+        data = {
+            "レース馬番ID": ["R01", "R02"],
+            "レースID": ["202001010101", "202001010102"],
+            "レース日付": ["2020-01-01", "2020-01-01"],
+            "開催回数": [1, 1],
+            "競馬場コード": ["01", "02"],
+            "競馬場名": ["東京", "中山"],
+            "開催日数": [1, 1],
+            "競争条件": ["3歳オープン", "4歳以上1000万下"],
+            "レース番号": [1, 2],
+            "重賞回次": [np.nan, np.nan],
+            "レース名": ["テストG1", "テストリステッド"],
+            "リステッド・重賞競走": ["G1", np.nan],  # grade column
+            "障害区分": ["", ""],
+            "芝・ダート区分": ["芝", "芝"],
+            "芝・ダート区分2": [np.nan, np.nan],
+            "右左回り・直線区分": ["左", "右"],
+            "内・外・襷区分": [np.nan, np.nan],
+            "距離(m)": [2000, 1600],
+            "天候": ["晴", "晴"],
+            "馬場状態1": ["良", "良"],
+            "馬場状態2": [np.nan, np.nan],
+            "発走時刻": ["10:00", "11:00"],
+            "着順": [1, 1],
+            "着順注記": [np.nan, np.nan],
+            "枠番": [1, 1],
+            "馬番": [1, 1],
+            "馬名": ["馬A", "馬B"],
+            "性別": ["牡", "牝"],
+            "馬齢": [4, 4],
+            "斤量": [57.0, 55.0],
+            "騎手": ["騎手A", "騎手B"],
+            "タイム": ["1:58.0", "1:35.0"],
+            "着差": ["", ""],
+            "1コーナー": [1, 1],
+            "2コーナー": [1, 1],
+            "3コーナー": [1, 1],
+            "4コーナー": [1, 1],
+            "上り": [34.0, 34.5],
+            "単勝": [2.0, 3.0],
+            "人気": [1, 2],
+            "馬体重": [480, 460],
+            "場体重増減": [0, 0],
+            "東西・外国・地方区分": ["東", "西"],
+            "調教師": ["調X", "調Y"],
+            "馬主": ["主A", "主B"],
+            "賞金(万円)": [100.0, 100.0],
+        }
+        # Add all 20 flag columns as empty strings (no text-derived flags).
+        from src.pipeline.column_mapping import FLAG_COLUMNS
+        for fc in FLAG_COLUMNS:
+            data[fc] = ["", ""]
+        df = pd.DataFrame(data)
+
+        race_df, _, _ = split_race_entry_result(df)
+
+        # After grade detection: race 0 (grade='G1') has graded_stakes=True
+        # AND stakes=True (these columns come from _UNMAPPED_RACE_FLAGS, so
+        # this asserts the helper ran AFTER that loop, not before).
+        row0 = race_df[race_df["race_id"] == "202001010101"].iloc[0]
+        assert bool(row0["race_flag_graded_stakes"]) is True, (
+            f"grade='G1' row should have graded_stakes=True after "
+            f"_apply_grade_detection (ran after unmapped loop); got "
+            f"{row0['race_flag_graded_stakes']!r}"
+        )
+        assert bool(row0["race_flag_stakes"]) is True, (
+            f"grade='G1' row should have stakes=True (graded => stakes); "
+            f"got {row0['race_flag_stakes']!r}"
+        )
+        # race_flag_listed must EXIST as a column (KeyError guard) and be NA
+        # for the G1 row (no (L)/(リステッド) token).
+        assert "race_flag_listed" in race_df.columns, (
+            "race_flag_listed column missing — _apply_grade_detection ran "
+            "before _UNMAPPED_RACE_FLAGS added it (HIGH #1 cycle-3 regression)"
+        )
