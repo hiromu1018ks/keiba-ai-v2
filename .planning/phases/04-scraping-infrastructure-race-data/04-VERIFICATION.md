@@ -1,13 +1,15 @@
 ---
 phase: 04-scraping-infrastructure-race-data
 verified: 2026-06-14T14:45:00Z
-status: human_needed
-score: 7/8 must-haves verified
+status: passed
+score: 8/8 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "run_scrape(live=True) で実際の netkeiba から小範囲（例: 2023-06-25 宝塚記念開催日、max_races=3）をスクレイプし、data/standard/scraped/{YYYYMM}/{race,entry,result}.parquet が非零ロードで生成されることを確認する"
     expected: "race/entry/result の3 Parquet が data/standard/scraped/202306/ に生成され、race 行数 >0、entry/result 行数 >0。raw HTML も data/raw/netkeiba/2023/06/ に保存される。UAT-Test-6 修正後の /race/list/{YYYYMM}/ URL 形式が実際のサイトで開催日リンクを返すことを実証する。"
     why_human: "実ネットワークアクセスとライブ netkeiba サイト構造が必要。フィクスチャベースのテストと合成 golden calendar (calendar_202306.html) はパーサ形状を検証するが、実際のURL形式 /race/list/{YYYYMM}/ が開催日リンクを返すことは実証済み（プラン04-08調査プローブ）のものの、本環境では再確認できない。"
+    status: resolved
+    resolution: "LIVE VERIFIED 2026-06-14T15:00:00Z. run_scrape(live=True, 2023-06-25, max_races=3) enumerated 92 races from /race/list/202306/ and produced data/standard/scraped/202306/{race(3),entry(37),result(37)}.parquet (race_date=2023-06-25 confirmed). Additional live probe of 宝塚記念 (race_id 202309030811): parse_race_html → race_name=宝塚記念, grade=GI (CR-02 bare-token), race_flag_graded_stakes=True (UAT-Test-3/GRADE_REGEX), 17 entries. 3歳未勝利戦: grade=None, graded_stakes=None. UAT-Test-6 + CR-02 + UAT-Test-3 all confirmed against live data."
 ---
 
 # Phase 4: Scraping Infrastructure & Race Data — Verification Report
