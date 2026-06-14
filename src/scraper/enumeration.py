@@ -39,11 +39,13 @@ rate limiting, T-04-04).
 
 import datetime
 import re
+import sys
 from typing import Callable, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 from loguru import logger
+from tqdm import tqdm
 
 from src.scraper.models import RaceRef
 
@@ -264,6 +266,7 @@ def enumerate_races(
     start_date: datetime.date,
     end_date: datetime.date,
     fetch_html: Callable[[str], Optional[str]],
+    progress: bool = True,
 ) -> list[RaceRef]:
     """Enumerate every race in ``[start_date, end_date]`` inclusive.
 
@@ -281,6 +284,10 @@ def enumerate_races(
     fetch_html : Callable[[str], Optional[str]]
         Injected transport shared across the whole batch (the Plan 03 session
         owns the browser and rate-limiting, T-04-04).
+    progress : bool, default True
+        When True, wrap the month iteration with a tqdm bar on stderr. When
+        False, iterate the plain list (no tqdm) -- use for log-file
+        redirection / CI / tests.
 
     Returns
     -------
@@ -290,13 +297,30 @@ def enumerate_races(
     refs: list[RaceRef] = []
     seen_ids: set[str] = set()
 
-    # Iterate every (year, month) touched by the range, inclusive. Using a
-    # cursor date advanced month-by-month avoids constructing a giant date list.
+    # PRECOMPUTE the list of (year, month) tuples touched by the range,
+    # inclusive. The cursor-advancement logic is IDENTICAL to the previous
+    # while-loop (behavior-preserving refactor): start at the first day of
+    # start_date's month, advance month-by-month, stop past end_date's month.
+    months: list[tuple[int, int]] = []
     cursor = datetime.date(start_date.year, start_date.month, 1)
     end_month_anchor = datetime.date(end_date.year, end_date.month, 1)
-
     while cursor <= end_month_anchor:
-        year, month = cursor.year, cursor.month
+        months.append((cursor.year, cursor.month))
+        if cursor.month == 12:
+            cursor = datetime.date(cursor.year + 1, 1, 1)
+        else:
+            cursor = datetime.date(cursor.year, cursor.month + 1, 1)
+    total = len(months)
+
+    # tqdm wraps the outer month loop ONLY. tqdm writes to stderr (the same
+    # stream loguru uses) and auto-hides when stderr is not a TTY (piped /
+    # captured), so existing tests stay output-neutral once they pass
+    # progress=False. The inner day/race loops are NOT wrapped.
+    for year, month in (
+        tqdm(months, desc="Enumerating", unit="month", total=total, file=sys.stderr)
+        if progress
+        else months
+    ):
         for day_url, race_day_date in enumerate_race_day_urls(year, month, fetch_html):
             # Boundary filter: skip days outside [start_date, end_date].
             if race_day_date < start_date or race_day_date > end_date:
@@ -306,10 +330,5 @@ def enumerate_races(
                     continue
                 seen_ids.add(ref.race_id)
                 refs.append(ref)
-        # Advance to the first day of the next month.
-        if month == 12:
-            cursor = datetime.date(year + 1, 1, 1)
-        else:
-            cursor = datetime.date(year, month + 1, 1)
 
     return refs

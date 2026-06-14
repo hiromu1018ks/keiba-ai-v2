@@ -143,7 +143,9 @@ def run_scrape(
                 if fetch_html is not None
                 else make_fetch_html_callable(session)
             )
-            race_refs = enumerate_races(start_date, end_date, enum_transport)
+            race_refs = enumerate_races(
+                start_date, end_date, enum_transport, progress=progress
+            )
             parsed_races = _fetch_and_parse(
                 race_refs=race_refs,
                 raw_dir=raw_dir,
@@ -156,7 +158,7 @@ def run_scrape(
         # Offline mode: the injected transport drives BOTH enumeration and
         # (as fetch_callable) race fetching (Cycle-3 #2 routing).
         assert fetch_html is not None  # guarded by the ValueError branch above
-        race_refs = enumerate_races(start_date, end_date, fetch_html)
+        race_refs = enumerate_races(start_date, end_date, fetch_html, progress=progress)
         parsed_races = _fetch_and_parse(
             race_refs=race_refs,
             raw_dir=raw_dir,

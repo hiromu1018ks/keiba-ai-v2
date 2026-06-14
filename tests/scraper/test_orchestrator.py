@@ -194,7 +194,9 @@ class TestRunScrape:
             mock_fetch.return_value = _FIXTURES / "202206050509.html"
 
             # Capture the transport enumerate_races was called with.
-            def _capture_transport(start, end, transport):
+            # **kwargs absorbs the progress kwarg run_scrape now threads
+            # through to enumerate_races (quick-task 260614-mfq).
+            def _capture_transport(start, end, transport, **kwargs):
                 captured_transport["transport"] = transport
                 return two_race_refs
 

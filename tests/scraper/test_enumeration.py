@@ -248,7 +248,8 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake
+            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake,
+            progress=False,
         )
         assert len(refs) == 2
         assert {r.race_id for r in refs} == {"202201050101", "202201050102"}
@@ -267,7 +268,8 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake
+            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake,
+            progress=False,
         )
         assert len(refs) == 1
         assert refs[0].race_id == "202201050101"
@@ -286,7 +288,8 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake
+            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake,
+            progress=False,
         )
         assert {r.race_id for r in refs} == {"202201050101"}
         # The out-of-range day was NOT fetched (filter applies before fetch).
@@ -302,7 +305,8 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2026, 5, 1), datetime.date(2026, 5, 31), fake
+            datetime.date(2026, 5, 1), datetime.date(2026, 5, 31), fake,
+            progress=False,
         )
         assert len(refs) == 1
         assert refs[0].race_id == "202605310101"
@@ -321,7 +325,8 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake
+            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake,
+            progress=False,
         )
         assert len(refs) == 1
         assert refs[0].race_id == "202201050101"
@@ -334,7 +339,8 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake
+            datetime.date(2022, 1, 1), datetime.date(2022, 1, 31), fake,
+            progress=False,
         )
         assert len(refs) >= 1
         assert all(isinstance(x, RaceRef) for x in refs)
@@ -380,11 +386,54 @@ class TestEnumerateRaces:
         fake = _make_fake_fetch(table)
 
         refs = enumerate_races(
-            datetime.date(2022, 1, 1), datetime.date(2022, 2, 28), fake
+            datetime.date(2022, 1, 1), datetime.date(2022, 2, 28), fake,
+            progress=False,
         )
         assert {r.race_id for r in refs} == {"202201050101", "202202010101"}
         # Both month calendars were fetched.
         assert jan_cal in fake.seen and feb_cal in fake.seen, fake.seen
+
+    def test_progress_flag_is_output_neutral(self) -> None:
+        """enumerate_races(progress=False) and enumerate_races(progress=True)
+        produce identical (race_id, race_date) output for the same input.
+
+        Builds the SAME multi-month table as test_multi_month_traversal, then
+        creates TWO independent fakes from it (each records its own ``.seen``
+        so the two calls don't conflate their fetch logs) and asserts the
+        RaceRef output is identical between the two progress modes. Does NOT
+        capture stderr or assert anything about tqdm's rendered text -- the
+        neutrality claim is at the RaceRef level, not the rendering level.
+        """
+        jan_cal = urljoin(BASE_URL, "/race/list/202201/")
+        feb_cal = urljoin(BASE_URL, "/race/list/202202/")
+        jan_cal_html = self._calendar_html("20220105")
+        feb_cal_html = self._calendar_html("20220201")
+        day_table = self._build_table(
+            {"20220105": ["202201050101"], "20220201": ["202202010101"]},
+            "20220105", "20220201",
+        )
+        table = {
+            jan_cal: jan_cal_html, feb_cal: feb_cal_html, **day_table,
+        }
+        fake_off = _make_fake_fetch(table)
+        fake_on = _make_fake_fetch(table)
+
+        refs_off = enumerate_races(
+            datetime.date(2022, 1, 1), datetime.date(2022, 2, 28), fake_off,
+            progress=False,
+        )
+        refs_on = enumerate_races(
+            datetime.date(2022, 1, 1), datetime.date(2022, 2, 28), fake_on,
+            progress=True,
+        )
+
+        # Sanity: the table actually yields races in both modes.
+        assert len(refs_off) > 0, refs_off
+        assert len(refs_on) > 0, refs_on
+        # Output neutrality: same race_ids, same race_dates, same order.
+        assert [(r.race_id, r.race_date) for r in refs_off] == [
+            (r.race_id, r.race_date) for r in refs_on
+        ]
 
 
 class TestEnumerateRaceDayUrlsUrlContract:
