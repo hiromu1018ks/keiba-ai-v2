@@ -36,3 +36,6 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "live: tests that issue real HTTPS requests to external sites (skipped by default; requires LIVE_SMOKE=1 and ALLOW_LIVE_NETWORK=1)",
+]
