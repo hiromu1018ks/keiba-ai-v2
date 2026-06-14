@@ -1,7 +1,16 @@
 # Phase 5: Trifecta Odds Scraping - Context
 
 **Gathered:** 2026-06-14
-**Status:** Ready for planning
+**Status:** ⛔ DEFERRED (2026-06-14)
+
+> **保留理由:** 過去レースの全通り三連複オッズ（最大816通り）が無料ソースから取得不可。
+> - netkeiba 結果ページは**的中組1件のみ**アーカイブ（実データ確認済み）。ライブオッズページは過去分を保持しない。
+> - JRA公式も全通り三連複オッズ履歴を無料でスクレープ可能な形では保持しない。
+>
+> **ピボット:** Phase 7-9（EV/backtest）は Phase 4 取得済みの**単勝オッズから Harville 展開した三連複含意オッズを市場プロキシ**として進める。制限: 実三連複市場特有の非効率性（人気組への過剰投票等）は検出不可。
+>
+> **再開条件:** ①2026年以降の前方オッズ収集が可能になった時、②有料プロバイダ（JV-Data等）導入時。
+> 本 CONTEXT.md の決定事項（netkeiba優先・PayoffSchema・平地2022-2026）は再開時にそのまま再利用可。正式記録は STATE.md Blockers/Concerns。
 
 <domain>
 ## Phase Boundary
