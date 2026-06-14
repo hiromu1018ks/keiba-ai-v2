@@ -136,6 +136,12 @@ _PASSING_SPLIT_RE = re.compile(r"[-－―]")
 # 降 (demoted) is NOT in this set -- it keeps the position and just records the note.
 _NULL_FINISH_NOTES = {"中", "取", "失", "除", "再"}
 
+# Demotion (降着) finish cell. netkeiba encodes this as ``3(降)`` / ``3（降）``
+# (full-width parens), but we also accept the suffix-only ``5降`` form for
+# robustness. The leading group captures the on-the-board position, which is
+# KEPT (per kaggle_converter.process_finish_position semantics).
+_DEMOTION_RE = re.compile(r"^(\d+)\s*[（(]?降[）)]?$")
+
 # WR-04: the complete set of legitimately-expected finish notes. Used by the
 # unknown-format branch of _parse_finish_position_cell as a defense-in-depth
 # sanity check: if a surfaced finish_note is NOT in this set, it likely
@@ -620,13 +626,12 @@ def _parse_finish_position_cell(
     if cleaned in _NULL_FINISH_NOTES:
         return (None, cleaned)
 
-    # Demotion: ``"5降"`` -> keep position, set note to 降.
-    if cleaned.endswith("降"):
-        prefix = cleaned[:-1].strip()
-        pos = _safe_int(prefix)
-        if pos is not None:
-            return (pos, "降")
-        return (None, "降")
+    # Demotion: ``3(降)`` / ``3（降）`` / ``5降`` -> keep position, note 降.
+    # netkeiba's real-world form is bracketed ``3(降)``; the suffix form is
+    # accepted for robustness. Position is KEPT (mirrors kaggle_converter).
+    demo = _DEMOTION_RE.match(cleaned)
+    if demo:
+        return (int(demo.group(1)), "降")
 
     # Plain numeric.
     pos = _safe_int(cleaned)

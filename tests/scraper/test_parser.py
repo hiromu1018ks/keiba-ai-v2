@@ -482,10 +482,17 @@ class TestParseRaceHtmlGolden:
             assert pos is None, f"note {note!r}: expected pos None, got {pos!r}"
             assert finish_note == note
 
-        # Demotion: 5降 keeps position 5 and records 降 as the note.
-        pos, finish_note = _parse_finish_position_cell("5降")
-        assert pos == 5
-        assert finish_note == "降"
+        # Demotion: netkeiba's real-world bracketed form ``3(降)`` keeps
+        # position 3 (regression: the old endswith("降") branch missed this
+        # because the cell ends with ``)`` not ``降``).
+        for cell, expected_pos in (
+            ("3(降)", 3),       # half-width parens (observed in the wild)
+            ("3（降）", 3),     # full-width parens
+            ("5降", 5),         # suffix form (pre-existing support)
+        ):
+            pos, finish_note = _parse_finish_position_cell(cell)
+            assert pos == expected_pos, f"demotion {cell!r}: expected {expected_pos}, got {pos!r}"
+            assert finish_note == "降", f"demotion {cell!r}: expected note '降', got {finish_note!r}"
 
         # Plain numeric.
         pos, finish_note = _parse_finish_position_cell("3")
