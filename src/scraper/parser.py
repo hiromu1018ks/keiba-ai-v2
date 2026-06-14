@@ -42,7 +42,7 @@ from bs4.element import Tag
 from loguru import logger
 
 from src.scraper.course_codes import COURSE_CODE_MAP
-from src.scraper.flag_crosswalk import _GRADE_REGEX, derive_race_flags
+from src.scraper.flag_crosswalk import derive_race_flags
 
 # ---------------------------------------------------------------------------
 # Regexes
@@ -56,9 +56,42 @@ _DATE_RE = re.compile(r"(\d{4})年(\d{1,2})月(\d{1,2})日")
 # 2-3 kanji venue names; ``\S+?`` keeps the match bounded.
 _MEETING_RE = re.compile(r"(\d+)回(\S+?)(\d+)日目")
 
-# Course info line: ``芝右1800m`` / ``ダート左1200m`` / ``障害芝→ダート3200m`` etc.
-# Captures surface(s), direction, and distance. We post-process for obstacle.
-_COURSE_INFO_RE = re.compile(r"(芝|ダート|障害)?\s*(芝|ダート)?\s*(右|左|直線)?\s*(\d+)m")
+# Course info line from the netkeiba header <span>. Real-world forms observed
+# across the 5 golden fixtures (Plan 04-04 Task 3):
+#   * ``芝右1800m``      (turf, right-handed inner loop)
+#   * ``芝右 外1600m``   (turf, right-handed OUTER loop -- space + 外)
+#   * ``芝右2200m``      (turf G1)
+#   * ``ダ左1600m``      (dirt; ダ is the netkeiba shorthand for ダート)
+#   * ``ダ右1200m``      (dirt)
+#   * ``障芝 ダート3110m`` (obstacle mixed turf->dirt; 障 = shorthand for 障害)
+#
+# Captures (surface_primary, surface_secondary, direction, outer_loop, distance).
+# The leading group matches 芝|ダ|ダート|障|障害 and obstacle markers so we can
+# post-process for obstacle detection. ``\s*外?`` accepts the optional 外
+# (outer-loop) marker between direction and distance.
+# Course info line from the netkeiba header <span>. Real-world forms observed
+# across the 5 golden fixtures (Plan 04-04 Task 3):
+#   * ``芝右1800m``      (turf, right-handed inner loop)
+#   * ``芝右 外1600m``   (turf, right-handed OUTER loop -- space + 外)
+#   * ``芝右2200m``      (turf G1)
+#   * ``ダ左1600m``      (dirt; ダ is the netkeiba shorthand for ダート)
+#   * ``ダ右1200m``      (dirt)
+#   * ``障芝 ダート3110m`` (obstacle mixed turf->dirt; 障 = shorthand for 障害)
+#
+# We use TWO regexes:
+#  * ``_COURSE_INFO_RE`` for the common turf/dirt forms (surface, direction,
+#    optional outer-loop marker, distance). It captures the four structured
+#    fields the race dict needs.
+#  * ``_DISTANCE_RE`` for the obstacle mixed-surface form, where there is no
+#    direction token between surfaces and the surface composition is encoded
+#    as ``障芝 ダート``. We treat obstacle as an override below.
+_COURSE_INFO_RE = re.compile(
+    r"(芝|ダート|ダ)"                    # surface (primary; netkeiba shorthand)
+    r"\s*(右|左|直線|直)"                # direction
+    r"(?:\s*(外))?"                     # optional outer-loop marker
+    r"\s*(\d+)m"
+)
+_DISTANCE_RE = re.compile(r"(\d{3,5})m")
 
 # Weather / track condition / start time captured from the inline summary line
 # (e.g. ``天候 : 晴 / 芝 : 良 / 発走 : 09:55``).
@@ -303,18 +336,41 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> Dict:
     # Search the whole document for these tokens; we use the first occurrence.
     full_text = soup.get_text(separator=" ")
 
+    # Obstacle detection takes precedence over the structured course regex,
+    # because netkeiba renders obstacle races as ``障芝 ダート3110m`` (no
+    # direction token between surfaces) and the ``障害`` substring is reliably
+    # present in the race-condition text. Condition-derived obstacle detection
+    # is required regardless of the regex match below.
+    is_obstacle = bool(race_condition and "障害" in race_condition)
+    if is_obstacle:
+        obstacle = "障害"
+        # Obstacle mixed-surface: netkeiba renders ``障芝 ダート3110m`` -- we
+        # take the secondary surface (ダート for the 障芝 -> ダート sequence)
+        # and the distance. Direction is not encoded for obstacle races.
+        if "ダート" in full_text or "ダ" in full_text:
+            surface = "ダート"
+        # Distance: use the trailing ``<digits>m`` near the course-info span.
+        # _DISTANCE_RE.search on the full text would also match any other
+        # ``<digits>m`` on the page (rare but possible); to stay precise we
+        # search within 40 chars of the first ``障`` marker.
+        obs_match = re.search(r"障.{0,40}?(\d{3,5})m", full_text)
+        if obs_match:
+            distance = int(obs_match.group(1))
+
     course_match = _COURSE_INFO_RE.search(full_text)
     if course_match:
-        s1, s2, dirn, dist = course_match.groups()
-        if s1 == "障害" or "障害" in (full_text[max(0, course_match.start() - 3):course_match.end() + 3]):
-            obstacle = "障害"
-        # Surface: prefer the explicit 芝/ダート token. For obstacle the
-        # surface may be ambiguous; leave it as the first non-None group.
-        surface = s2 or s1
-        if dirn:
-            direction = dirn
-        if dist:
-            distance = int(dist)
+        s1, dirn, _outer, dist = course_match.groups()
+        if not is_obstacle:
+            # Surface: normalize netkeiba shorthand (ダ -> ダート).
+            if s1 == "ダ":
+                surface = "ダート"
+            elif s1 in {"芝", "ダート"}:
+                surface = s1
+            if dirn:
+                # ``直`` -> ``直線`` for schema consistency.
+                direction = "直線" if dirn == "直" else dirn
+            if dist:
+                distance = int(dist)
 
     weather_match = _WEATHER_RE.search(full_text)
     if weather_match:
@@ -328,11 +384,30 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> Dict:
     if start_match:
         start_time = start_match.group(1)
 
-    # ----- race name + grade from <h1> -----
+    # ----- race name + grade -----
+    #
+    # Race-name extraction (Rule 1 deviation fix verified against the 5 golden
+    # fixtures): netkeiba's <h1> contains the SITE LOGO, not the race name.
+    # The race name is reliably in <title> as
+    # ``"ひいらぎ賞｜2022年12月17日 | 競馬データベース - netkeiba"`` where the
+    # FIRST pipe-separated segment is the race name (full-width ``｜``).
+    # We fall back to <h1> text only if <title> is missing/empty.
     race_name: Optional[str] = None
-    h1 = soup.find("h1")
-    if h1:
-        race_name = h1.get_text(strip=True) or None
+    title_tag = soup.find("title")
+    if title_tag:
+        title_text = title_tag.get_text(strip=True)
+        if title_text:
+            # Split on the first full-width or half-width pipe.
+            for sep in ("｜", "|"):
+                if sep in title_text:
+                    race_name = title_text.split(sep, 1)[0].strip() or None
+                    break
+            if race_name is None:
+                race_name = title_text or None
+    if race_name is None:
+        h1 = soup.find("h1")
+        if h1:
+            race_name = h1.get_text(strip=True) or None
 
     # Grade token from the race name (``東京優駿(GI)``). Use the same regex
     # as flag_crosswalk so classification is consistent.
