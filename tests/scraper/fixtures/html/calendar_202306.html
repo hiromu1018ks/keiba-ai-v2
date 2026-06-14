@@ -1,0 +1,25 @@
+<!-- SYNTHETIC: constructed from verified live probe data (UAT-Test-6) because
+     live fetch was unavailable. Real structure confirmed 2026-06-14: the live
+     page at https://db.netkeiba.com/race/list/202306/ returns 8 racing days
+     for 2023-06 (20230603, 04, 10, 11, 17, 18, 24, 25), each as a relative
+     /race/list/{YYYYMMDD}/ anchor. This fixture mirrors that structure so the
+     parse_calendar_month_html regression guard exercises the real href shape. -->
+<html>
+<head><title>2023年6月のレース開催日</title></head>
+<body>
+<div class="race_calendar">
+  <a href="/race/list/20230603/">6月3日</a>
+  <a href="/race/list/20230604/">6月4日</a>
+  <a href="/race/list/20230610/">6月10日</a>
+  <a href="/race/list/20230611/">6月11日</a>
+  <a href="/race/list/20230617/">6月17日</a>
+  <a href="/race/list/20230618/">6月18日</a>
+  <a href="/race/list/20230624/">6月24日</a>
+  <a href="/race/list/20230625/">6月25日</a>
+</div>
+<!-- Decoy links that must NOT be picked up as racing days -->
+<a href="/race/list/20230">bad-5-digit</a>
+<a href="/race/list/2023060301/">bad-10-digit</a>
+<a href="/race/result/20230603/">not-a-day-listing</a>
+</body>
+</html>

@@ -10,6 +10,7 @@ implicitly enforces Cycle-2 #1 across the whole suite.
 
 import datetime
 import re
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin
 
@@ -239,7 +240,7 @@ class TestEnumerateRaces:
         URL the fake would return None and the test would fail -- implicitly
         enforcing Cycle-2 #1.
         """
-        calendar_url = urljoin(BASE_URL, "/race/calendar/202201/")
+        calendar_url = urljoin(BASE_URL, "/race/list/202201/")
         calendar_html = self._calendar_html("20220105")
         day_races = {"20220105": ["202201050101", "202201050102"]}
         day_table = self._build_table(day_races, "20220105")
@@ -256,7 +257,7 @@ class TestEnumerateRaces:
 
     def test_deduplicates_across_days(self) -> None:
         """Two days both list the same race_id -> result has it exactly once."""
-        calendar_url = urljoin(BASE_URL, "/race/calendar/202201/")
+        calendar_url = urljoin(BASE_URL, "/race/list/202201/")
         calendar_html = self._calendar_html("20220105", "20220106")
         day_table = self._build_table(
             {"20220105": ["202201050101"], "20220106": ["202201050101"]},
@@ -273,7 +274,7 @@ class TestEnumerateRaces:
 
     def test_filters_by_date_range(self) -> None:
         """A day at 2022-02-01 in the calendar is excluded when end is 2022-01-31."""
-        calendar_url = urljoin(BASE_URL, "/race/calendar/202201/")
+        calendar_url = urljoin(BASE_URL, "/race/list/202201/")
         calendar_html = self._calendar_html("20220105", "20220201")
         # Note: in real life Feb 1 wouldn't appear in the Jan calendar, but
         # the filter must defend against any date the page emits.
@@ -294,7 +295,7 @@ class TestEnumerateRaces:
 
     def test_boundary_end_date_inclusive(self) -> None:
         """D-05 cutoff 2026-05-31: a day exactly on end_date IS included."""
-        calendar_url = urljoin(BASE_URL, "/race/calendar/202605/")
+        calendar_url = urljoin(BASE_URL, "/race/list/202605/")
         calendar_html = self._calendar_html("20260531")
         day_table = self._build_table({"20260531": ["202605310101"]}, "20260531")
         table = {calendar_url: calendar_html, **day_table}
@@ -308,7 +309,7 @@ class TestEnumerateRaces:
 
     def test_handles_fetch_none_gracefully(self) -> None:
         """One day URL returns None -> enumerate_races still returns others."""
-        calendar_url = urljoin(BASE_URL, "/race/calendar/202201/")
+        calendar_url = urljoin(BASE_URL, "/race/list/202201/")
         calendar_html = self._calendar_html("20220105", "20220109")
         ok_day_url = urljoin(BASE_URL, "/race/list/20220105/")
         bad_day_url = urljoin(BASE_URL, "/race/list/20220109/")
@@ -326,7 +327,7 @@ class TestEnumerateRaces:
         assert refs[0].race_id == "202201050101"
 
     def test_returns_race_refs_not_strings(self) -> None:
-        calendar_url = urljoin(BASE_URL, "/race/calendar/202201/")
+        calendar_url = urljoin(BASE_URL, "/race/list/202201/")
         calendar_html = self._calendar_html("20220105")
         day_table = self._build_table({"20220105": ["202201050101"]}, "20220105")
         table = {calendar_url: calendar_html, **day_table}
@@ -365,8 +366,8 @@ class TestEnumerateRaces:
 
     def test_multi_month_traversal(self) -> None:
         """enumerate_races walks multiple months in the range."""
-        jan_cal = urljoin(BASE_URL, "/race/calendar/202201/")
-        feb_cal = urljoin(BASE_URL, "/race/calendar/202202/")
+        jan_cal = urljoin(BASE_URL, "/race/list/202201/")
+        feb_cal = urljoin(BASE_URL, "/race/list/202202/")
         jan_cal_html = self._calendar_html("20220105")
         feb_cal_html = self._calendar_html("20220201")
         day_table = self._build_table(
@@ -384,6 +385,49 @@ class TestEnumerateRaces:
         assert {r.race_id for r in refs} == {"202201050101", "202202010101"}
         # Both month calendars were fetched.
         assert jan_cal in fake.seen and feb_cal in fake.seen, fake.seen
+
+
+class TestEnumerateRaceDayUrlsUrlContract:
+    """UAT-Test-6 regression guard: the calendar URL form contract.
+
+    The previous ``race/calendar/{YYYYMM}/`` form returns ~40-52KB of
+    navigation HTML with ZERO day links on the live netkeiba site (verified by
+    UAT-Test-6 live probing during planning). ``/race/list/{YYYYMM}/`` is the
+    verified working form. These tests capture the URL passed to ``fetch_html``
+    and assert the form, so any silent reversion to the broken form is caught
+    immediately.
+    """
+
+    def test_enumerate_race_day_urls_constructs_correct_live_url(self) -> None:
+        """UAT-Test-6 regression guard: the calendar URL MUST be /race/list/{YYYYMM}/.
+
+        The previous ``race/calendar/{YYYYMM}/`` form returns 0 day links on
+        the live site (verified by UAT-Test-6 live probing). This test captures
+        the URL passed to fetch_html and asserts it matches the verified
+        working form.
+        """
+        captured: list[str] = []
+
+        def fake(url: str) -> Optional[str]:
+            captured.append(url)
+            return None
+
+        enumerate_race_day_urls(2023, 6, fake)
+        assert captured == ["https://db.netkeiba.com/race/list/202306/"], captured
+        assert "/race/calendar/" not in captured[0], (
+            "UAT-Test-6 regression: calendar URL reverted to broken form"
+        )
+
+    def test_month_is_zero_padded(self) -> None:
+        """A single-digit month is zero-padded to two digits in the URL."""
+        captured: list[str] = []
+
+        def fake(url: str) -> Optional[str]:
+            captured.append(url)
+            return None
+
+        enumerate_race_day_urls(2023, 1, fake)
+        assert captured == ["https://db.netkeiba.com/race/list/202301/"], captured
 
 
 class TestRaceIdValidation:
@@ -410,3 +454,35 @@ class TestRaceIdValidation:
         refs = parse_race_day_html(html, datetime.date(2022, 1, 5))
         assert len(refs) == 1
         assert refs[0].race_id == "202201050101"
+
+
+class TestParseCalendarMonthHtmlGolden:
+    """UAT-Test-6 golden-fixture regression guard.
+
+    Parses a real (or synthetic-fallback) ``/race/list/{YYYYMM}/`` calendar
+    page and asserts it yields the verified racing days for 2023-06. This
+    locks the URL contract: if anyone reverts enumerate_race_day_urls to
+    ``race/calendar/``, this test still passes (it tests the parser in
+    isolation), but test_enumerate_race_day_urls_constructs_correct_live_url
+    will catch the URL revert. Together they form a two-layer guard.
+    """
+
+    def test_yields_eight_racing_days_for_202306(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "html" / "calendar_202306.html"
+        assert fixture.exists(), f"golden calendar fixture missing: {fixture}"
+        html = fixture.read_text(encoding="utf-8")
+        results = parse_calendar_month_html(html)
+        # The 8 verified racing days for 2023-06 (live-probed 2026-06-14).
+        expected_days = {
+            datetime.date(2023, 6, 3), datetime.date(2023, 6, 4),
+            datetime.date(2023, 6, 10), datetime.date(2023, 6, 11),
+            datetime.date(2023, 6, 17), datetime.date(2023, 6, 18),
+            datetime.date(2023, 6, 24), datetime.date(2023, 6, 25),
+        }
+        actual_days = {d for _url, d in results}
+        assert actual_days == expected_days, (
+            f"UAT-Test-6 golden mismatch: expected {len(expected_days)} days, "
+            f"got {len(actual_days)}: {sorted(actual_days)}"
+        )
+        # Every returned URL is absolute (Cycle-2 #1 still holds).
+        assert all(u.startswith("https://") for u, _ in results), results
