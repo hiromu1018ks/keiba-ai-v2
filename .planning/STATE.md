@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-06 complete (phase 04 done)
-last_updated: "2026-06-14T01:43:00.000Z"
-last_activity: 2026-06-14 -- Plan 04-06 complete (orchestrator + public re-exports + full-chain e2e + dtype-fidelity; phase 04 done)
+stopped_at: Phase 4 plan 04-07 complete (UAT-Test-3 gap closure)
+last_updated: "2026-06-14T04:55:56.593Z"
+last_activity: 2026-06-14 -- Phase 04 execution started
 progress:
   total_phases: 10
-  completed_phases: 4
-  total_plans: 19
-  completed_plans: 19
-  percent: 100
+  completed_phases: 3
+  total_plans: 21
+  completed_plans: 20
+  percent: 30
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 04 — scraping-infrastructure-race-data COMPLETE; ready for next phase
+**Current focus:** Phase 04 — scraping-infrastructure-race-data
 
 ## Current Position
 
-Phase: 04 (scraping-infrastructure-race-data) — COMPLETE (all 6 plans done)
-Plan: 6 of 6 done in phase 04 (04-01 through 04-06 all complete)
-Status: Plan 04-06 complete; phase 04 done (orchestrator + public re-exports + full-chain e2e + dtype-fidelity). Ready for next phase per ROADMAP.
-Last activity: 2026-06-14 -- Plan 04-06 complete (orchestrator wires enumerate->fetch->parse->normalize with Cycle-2 #5 injectable fetch_html boundary; live=False raises ValueError without transport; public re-exports added to __init__.py; TestFullChainE2E + TestSchemaCompatibility + TestRunScrape pass)
+Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-06-14 -- Phase 04 execution started
 
 Progress: [██████████] 100%
 
@@ -69,6 +69,7 @@ Progress: [██████████] 100%
 | Phase 04 P03 | 302 | 2 tasks | 2 files |
 | Phase 04 P05 | 352 | 2 tasks | 2 files |
 | Phase 04 P06 | 840 | 3 tasks | 6 files |
+| Phase 04 P07 | 371 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Recent decisions affecting current work:
 - [Phase 04 P06]: CYCLE-3 #2 resolved — offline path passes fetch_callable=transport to fetch_race_html so a race NOT pre-saved is fetched via the transport; transport returning None is handled gracefully (race skipped, others proceed), not AttributeError.
 - [Phase 04 P06]: CYCLE-2 #7 resolved — TestSchemaCompatibility asserts physical-type EQUALITY for Kaggle-NON-null columns + deliberate promotion (null->bool/string) for Kaggle-null columns. Unachievable Cycle-1 'equality on every overlapping column' replaced (pandas nullable boolean serializes to Arrow bool even for all-None cols).
 - [Phase 04 P06]: Cycle-1 HIGH #3 final step — src/scraper/__init__.py transitions from import-safe empty marker to public re-exports (10 symbols: FetcherSession, fetch_race_html, fetch_with_retry, enumerate_races, enumerate_race_day_urls, enumerate_races_for_day, parse_race_html, normalize_to_parquet, RaceRef, run_scrape).
+- [Phase ?]: [Phase 04 P07]: UAT-Test-3 overrides Plan-04 Decision D4 — (国際)->graded_stakes mapping is a semantic error (international designation is NOT graded); removed from FLAG_CROSSWALK. GRADE_REGEX (GI/GII/GIII/重賞/ＧＩ) is the SOLE source of race_flag_graded_stakes=True.
+- [Phase ?]: [Phase 04 P07]: Kaggle-side column_mapping.py (国際)->graded mapping left untouched (out of scope). Phase 6 (Data Integration) MUST reconcile the divergence before joining scraped 2022-2024 rows with 2015-2021 Kaggle rows — either drop the Kaggle mapping too, or add a race_flag_international column on both sides.
+- [Phase ?]: [Phase 04 P07]: Rule 1 deviation — parse_race_html extended to harvest the second <h1> (grade-bearing, e.g. 第64回宝塚記念(GI)) into a grade_haystack fed to derive_race_flags + grade/grade_revision extraction. Required because removing the (国際) mapping exposed a latent bug: the bare <title> race_name lacks the GI token so GRADE_REGEX never fired, leaving the G1 fixture graded-less. Public race_name stays bare per Plan-04 P04.
 
 ### Pending Todos
 
@@ -134,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T01:43:00.000Z
-Stopped at: Phase 4 plan 04-06 complete (phase 04 done)
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-06-SUMMARY.md
+Last session: 2026-06-14T04:55:56.588Z
+Stopped at: Phase 4 plan 04-07 complete (UAT-Test-3 gap closure; one gap plan remaining: 04-08 for UAT-Test-6 URL blocker)
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-07-SUMMARY.md
