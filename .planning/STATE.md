@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Phase 6 context gathered — 前提タスク: 本格スクレイプ(2022-2026/5)未実行、Phase 6 計画前に別実行が必要(DATA-05)"
-last_updated: "2026-06-14T11:17:32.975Z"
+last_updated: "2026-06-14T11:37:15.247Z"
 last_activity: "2026-06-14 - Completed quick task 260614-mfq: enumerate_races に tqdm 進捗バーを追加"
 progress:
   total_phases: 10
