@@ -17,12 +17,13 @@ JRA中央競馬を対象に、三連複で期待値の高い買い目を抽出�
 - [x] 66カラムのKaggle分類網羅性が機械的に検証済み — Validated in Phase 1: Data Schema & Leak Audit
 - [x] Kaggleデータ（2015〜2021年）を5テーブル（race/entry/result/odds_trifecta/payoff）のParquetに変換、140テスト全通過 — Validated in Phase 2: Kaggle Data Pipeline
 - [x] 8項目のデータ品質バリデーションが実装済み（行数・スキーマ・日付範囲・障害除外・参照整合性等） — Validated in Phase 2: Kaggle Data Pipeline
+- [x] 2022年以降のJRAレース・出走データをスクレイピングで収集しstandard Parquetに変換（2022-2024、Kaggleと同一スキーマ） — Validated in Phase 4: Scraping Infrastructure & Race Data
+- [x] スクレイピングパイプライン（fetch/parse/normalize分離、raw HTML先保存、重複取得回避、レートリミット強制）実装 — Validated in Phase 4 (SCRP-01/02/03/05、8 plans、UAT gap-closure + ライブ検証完了)
 
 ### Active
 
 - [ ] Kaggleデータ（1986〜2014年）のstandard層変換（現状は2015年以降のみ対応）
 - [ ] raw・standard・featureの3層データパイプラインが構築されていること
-- [ ] 2022年以降のデータをスクレイピングで収集・raw保存できること
 - [ ] 全通りの三連複オッズを取得できること
 - [ ] Kaggle期間と自前収集期間を共通standard形式で結合できること
 - [ ] LightGBMで各馬の3着内確率モデルが構築できること
@@ -91,4 +92,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-11 after Phase 2 completion*
+*Last updated: 2026-06-14 after Phase 4 completion (gap closure + live verification)*
