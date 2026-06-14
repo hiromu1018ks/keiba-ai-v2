@@ -184,8 +184,11 @@ class _GoldenTransport:
     The Cycle-2 #5 full-chain test injects an instance of this class as the
     ``fetch_html`` argument to ``run_scrape``. The transport serves:
 
-      * Calendar page URLs (``/race/calendar/{YYYYMM}/``) -> minimal calendar
+      * Calendar page URLs (``/race/list/{YYYYMM}/``) -> minimal calendar
         HTML listing each fixture's race day as a ``/race/list/{YYYYMMDD}/`` link.
+        (UAT-Test-6: the prior ``race/calendar/{YYYYMM}/`` form returns 0 day
+        links on the live site; the corrected ``/race/list/{YYYYMM}/`` form is
+        the verified working URL.)
       * Race-day page URLs (``/race/list/{YYYYMMDD}/``) -> minimal race-day
         HTML listing each fixture's ``/race/{race_id}/`` link.
       * Race page URLs (``/race/{race_id}/``) -> the actual golden HTML
@@ -209,8 +212,9 @@ class _GoldenTransport:
         parsed = urlparse(url)
         path = parsed.path
 
-        # Calendar page: /race/calendar/{YYYYMM}/
-        cal_match = re.match(r"^/race/calendar/(\d{6})/?$", path)
+        # Calendar page: /race/list/{YYYYMM}/ (UAT-Test-6: corrected from
+        # race/calendar/ which returns 0 day links on the live site).
+        cal_match = re.match(r"^/race/list/(\d{6})/?$", path)
         if cal_match:
             yyyymm = cal_match.group(1)
             return self._build_calendar_html(yyyymm)
