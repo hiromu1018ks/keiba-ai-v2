@@ -19,7 +19,7 @@
 - [x] **SCRP-02**: 2022年以降のJRAレース結果・出走馬情報のHTMLを取得しraw保存できること
 - [ ] **SCRP-03**: 保存済みHTMLから必要情報を抽出し、standard形式に変換できること
 - [ ] **SCRP-04**: 全通りの三連複オッズ（最大816通り）を取得し、レースID・組み合わせ・オッズの形式で保存できること
-- [ ] **SCRP-05**: 同一ページの重複取得を回避し、既存HTMLキャッシュを活用できること
+- [x] **SCRP-05**: 同一ページの重複取得を回避し、既存HTMLキャッシュを活用できること
 
 ### Model A — 3着内確率
 
@@ -97,7 +97,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCRP-02 | Phase 4 | Complete |
 | SCRP-03 | Phase 4 | Pending |
 | SCRP-04 | Phase 5 | Pending |
-| SCRP-05 | Phase 4 | Pending |
+| SCRP-05 | Phase 4 | Complete |
 | MODA-01 | Phase 7 | Pending |
 | MODA-02 | Phase 7 | Pending |
 | MODA-03 | Phase 7 | Pending |

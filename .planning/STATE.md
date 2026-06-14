@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-04 complete
-last_updated: "2026-06-14T00:30:00.000Z"
-last_activity: 2026-06-14 -- Plan 04-04 complete (header-driven BS4 parser + COURSE_CODE_MAP + FLAG_CROSSWALK + 5 golden HTML fixtures + 103 parser tests)
+stopped_at: Phase 4 plan 04-03 complete
+last_updated: "2026-06-14T01:13:53.636Z"
+last_activity: 2026-06-14 -- Plan 04-03 complete (Playwright fetcher: FetcherSession + atomic write + block detection + module-level fetch_with_retry wrapper + 29 tests)
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 19
-  completed_plans: 16
-  percent: 84
+  completed_plans: 17
+  percent: 89
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
-Plan: 5 of 6 (04-01, 04-02, 04-04 done; 04-03 still pending)
-Status: Plan 04-04 complete; ready for 04-03 (fetcher) or 04-05 (normalizer, blocked on 04-03+04-04)
-Last activity: 2026-06-14 -- Plan 04-04 complete (header-driven BS4 parser + COURSE_CODE_MAP + FLAG_CROSSWALK + 5 golden HTML fixtures + 103 parser tests)
+Plan: 4 of 6 done in phase 04 (04-01, 04-02, 04-03, 04-04 complete; 04-05 normalizer and 04-06 orchestrator pending)
+Status: Plan 04-03 complete; ready for 04-05 (normalizer, now unblocked — 04-03+04-04 both done)
+Last activity: 2026-06-14 -- Plan 04-03 complete (Playwright fetcher: FetcherSession + atomic write + block detection + module-level fetch_with_retry wrapper + 29 tests)
 
-Progress: [████████░░] 84%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [████████░░] 84%
 | Phase 04 P01 | 78 | 2 tasks | 4 files |
 | Phase 04 P02 | 197 | 2 tasks | 3 files |
 | Phase 04 P04 | 1500 | 4 tasks | 8 files |
+| Phase 04 P03 | 302 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,9 @@ Recent decisions affecting current work:
 - [Phase 04 P04]: obstacle detection keyed off '障害' substring in race_condition (course-info line has no direction token for obstacle races); _COURSE_INFO_RE rewritten for ダ shorthand + 外 outer-loop + optional direction
 - [Phase 04 P04]: race_flag_graded_stakes set via (国際) substring for Kaggle join compatibility; race_flag_stakes stays None when race name has no explicit GI token (Plan accepts — Phase 6 may revisit)
 - [Phase 04 P04]: Cycle-2 HIGH #2 resolved — FLAG_CROSSWALK is exhaustive superset of KAGGLE_COLUMN_MAP's 13 race_flag_* targets (牡 + bare 見習騎手 added); parametrized coverage guard test_crosswalk_covers_all_kaggle_flag_targets
+- [Phase 04]: Cycle-2 HIGH #8 resolved — module-level fetch_with_retry function exists alongside FetcherSession.fetch_with_retry method; verify import succeeds; wrapper docstring warns against loop usage (T-04-09b regression guard) — Plan 04-03 implements the Playwright fetcher. Decisions resolve Cycle-2 HIGH #8 (export contradiction), Cycle-3 #2 (offline transport routing), and confirm Cycle-1 MEDIUM mitigations (rate-limit-on-error, networkidle avoidance, finally cleanup, 12-digit validation).
+- [Phase 04]: Cycle-3 #2 resolved — fetch_race_html(race_ref, session=None, raw_dir, fetch_callable=None); when session None + fetch_callable provided, callable fetches HTML (offline mode); both None raises ValueError (not AttributeError); fetch_callable wins when both provided — Plan 04-03 implements the Playwright fetcher. Decisions resolve Cycle-2 HIGH #8 (export contradiction), Cycle-3 #2 (offline transport routing), and confirm Cycle-1 MEDIUM mitigations (rate-limit-on-error, networkidle avoidance, finally cleanup, 12-digit validation).
+- [Phase 04]: FetcherSession.wait_until default 'domcontentloaded' (NOT 'networkidle'); fetch() applies time.sleep(rate_limit_seconds) in finally block on BOTH success and error paths (Cycle-1 MEDIUM rate-limit-on-error); atomic write via temp + os.replace; mock chain for tests is sync_playwright().return_value.start.return_value — Plan 04-03 implements the Playwright fetcher. Decisions resolve Cycle-2 HIGH #8 (export contradiction), Cycle-3 #2 (offline transport routing), and confirm Cycle-1 MEDIUM mitigations (rate-limit-on-error, networkidle avoidance, finally cleanup, 12-digit validation).
 
 ### Pending Todos
 
@@ -117,6 +121,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T00:30:00.000Z
-Stopped at: Phase 4 plan 04-04 complete
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-04-SUMMARY.md
+Last session: 2026-06-14T01:13:53.632Z
+Stopped at: Phase 4 plan 04-03 complete
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-03-SUMMARY.md
