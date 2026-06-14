@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-02 complete
-last_updated: "2026-06-14T00:00:00.000Z"
-last_activity: 2026-06-14 -- Plan 04-02 complete (RaceRef model + 3-level calendar enumeration + Cycle-2 #1 URL absolutization)
+stopped_at: Phase 4 plan 04-04 complete
+last_updated: "2026-06-14T00:30:00.000Z"
+last_activity: 2026-06-14 -- Plan 04-04 complete (header-driven BS4 parser + COURSE_CODE_MAP + FLAG_CROSSWALK + 5 golden HTML fixtures + 103 parser tests)
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 19
-  completed_plans: 15
-  percent: 79
+  completed_plans: 16
+  percent: 84
 ---
 
 # Project State
@@ -26,17 +26,17 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
-Plan: 3 of 6
-Status: Ready to execute
-Last activity: 2026-06-14 -- Plan 04-02 complete (RaceRef model + 3-level calendar enumeration + Cycle-2 #1 URL absolutization)
+Plan: 5 of 6 (04-01, 04-02, 04-04 done; 04-03 still pending)
+Status: Plan 04-04 complete; ready for 04-03 (fetcher) or 04-05 (normalizer, blocked on 04-03+04-04)
+Last activity: 2026-06-14 -- Plan 04-04 complete (header-driven BS4 parser + COURSE_CODE_MAP + FLAG_CROSSWALK + 5 golden HTML fixtures + 103 parser tests)
 
-Progress: [████████░░] 79%
+Progress: [████████░░] 84%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,7 +47,7 @@ Progress: [████████░░] 79%
 | 01 | 5 | - | - |
 | 02 | 3 | - | - |
 | 03 | 5 | - | - |
-| 04 | 2 | - | - |
+| 04 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -65,6 +65,7 @@ Progress: [████████░░] 79%
 | Phase 03 P05 | 2015 | 2 tasks | 2 files |
 | Phase 04 P01 | 78 | 2 tasks | 4 files |
 | Phase 04 P02 | 197 | 2 tasks | 3 files |
+| Phase 04 P04 | 1500 | 4 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,10 @@ Recent decisions affecting current work:
 - [Phase 04 P02]: RaceRef is a stdlib frozen dataclass (NOT Pydantic) — lightweight typed pair; Pydantic overhead reserved for src/schemas/ standard-layer schemas
 - [Phase 04 P02]: _RACE_HREF_RE extraction regex is \d+ (variable-length numeric), NOT \d{12}; strict 12-digit check delegated to _RACE_ID_RE.fullmatch so malformed (10/13-digit) IDs actually reach the warning branch (was dead code — Rule 1 fix)
 - [Phase 04 P02]: Cycle-2 HIGH #1 resolved — every URL handed to fetch_html is absolute via urljoin(BASE_URL, href); parse_calendar_month_html yields absolute day URLs, enumerate_races_for_day defensively repairs non-http inputs
+- [Phase 04 P04]: race_name extracted from <title> not <h1> — netkeiba's <h1> holds the site logo, not the race name (Rule 1 deviation fix verified against 5 real fixtures)
+- [Phase 04 P04]: obstacle detection keyed off '障害' substring in race_condition (course-info line has no direction token for obstacle races); _COURSE_INFO_RE rewritten for ダ shorthand + 外 outer-loop + optional direction
+- [Phase 04 P04]: race_flag_graded_stakes set via (国際) substring for Kaggle join compatibility; race_flag_stakes stays None when race name has no explicit GI token (Plan accepts — Phase 6 may revisit)
+- [Phase 04 P04]: Cycle-2 HIGH #2 resolved — FLAG_CROSSWALK is exhaustive superset of KAGGLE_COLUMN_MAP's 13 race_flag_* targets (牡 + bare 見習騎手 added); parametrized coverage guard test_crosswalk_covers_all_kaggle_flag_targets
 
 ### Pending Todos
 
@@ -112,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T00:00:00.000Z
-Stopped at: Phase 4 plan 04-02 complete
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-02-SUMMARY.md
+Last session: 2026-06-14T00:30:00.000Z
+Stopped at: Phase 4 plan 04-04 complete
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-04-SUMMARY.md
