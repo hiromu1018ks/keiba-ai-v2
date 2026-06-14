@@ -756,9 +756,27 @@ def parse_race_html(html_path: Path) -> Dict:
         has all ``RaceSchema`` field names (runner-count excluded), each entry has
         all ``EntrySchema`` field names, and each result has all
         ``ResultSchema`` field names. Missing values are ``None``.
+
+    Raises
+    ------
+    ValueError
+        WR-01: if the filename stem is not a 12-digit race_id. Without this
+        guard, a misnamed fixture (e.g. ``foo.html``) would inject
+        ``race_id="foo"`` and silently produce a corrupt race row whose
+        entries/results all fail the 14-digit ``horse_race_id`` validation and
+        get dropped -- an empty entries list with a corrupt race row.
     """
     html_path = Path(html_path)
     race_id = html_path.stem
+    # WR-01: validate the stem is a 12-digit race_id before it propagates into
+    # race["race_id"] and horse_race_id. fetcher.py:290 validates on write; this
+    # validates on parse entry so direct callers (tests, manual use) are
+    # protected equivalently.
+    if not re.fullmatch(r"\d{12}", race_id):
+        raise ValueError(
+            f"parse_race_html: filename stem {race_id!r} is not a 12-digit "
+            f"race_id (file={html_path})"
+        )
 
     html = html_path.read_text(encoding="utf-8")
     soup = BeautifulSoup(html, features="lxml")

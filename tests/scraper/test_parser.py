@@ -464,3 +464,43 @@ class TestParseRaceHtmlGolden:
             for entry in out["entries"]:
                 expected = f"{race_id}{entry['horse_number']:02d}"
                 assert entry["horse_race_id"] == expected
+
+
+class TestParseRaceHtmlFilenameValidation:
+    """WR-01: parse_race_html validates the filename stem is a 12-digit race_id.
+
+    Without this guard a misnamed fixture (e.g. ``foo.html``) would inject
+    ``race_id="foo"``, silently producing a corrupt race row whose
+    entries/results all fail the 14-digit horse_race_id validation and get
+    dropped -- an empty entries list with a corrupt race row.
+    """
+
+    def test_non_numeric_stem_raises(self, tmp_path: Path) -> None:
+        """A non-numeric filename stem is rejected at parse entry."""
+        bad_path = tmp_path / "foo.html"
+        bad_path.write_text("<html></html>", encoding="utf-8")
+        with pytest.raises(ValueError) as excinfo:
+            parse_race_html(bad_path)
+        msg = str(excinfo.value)
+        assert "foo" in msg
+        assert "12-digit" in msg
+
+    def test_short_numeric_stem_raises(self, tmp_path: Path) -> None:
+        """A too-short numeric stem (e.g. 10 digits) is rejected."""
+        bad_path = tmp_path / "2022010501.html"
+        bad_path.write_text("<html></html>", encoding="utf-8")
+        with pytest.raises(ValueError):
+            parse_race_html(bad_path)
+
+    def test_long_numeric_stem_raises(self, tmp_path: Path) -> None:
+        """A too-long numeric stem (e.g. 13 digits) is rejected."""
+        bad_path = tmp_path / "2022010501013.html"
+        bad_path.write_text("<html></html>", encoding="utf-8")
+        with pytest.raises(ValueError):
+            parse_race_html(bad_path)
+
+    def test_valid_12_digit_stem_accepted(self) -> None:
+        """Sanity: a valid 12-digit-stemmed golden fixture parses normally."""
+        out = parse_race_html(FIXTURES_DIR / "202206050509.html")
+        assert set(out.keys()) >= {"race", "entries", "results"}
+        assert out["race"]["race_id"] == "202206050509"
