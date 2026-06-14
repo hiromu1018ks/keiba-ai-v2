@@ -8,7 +8,10 @@ criteria:
   * HIGH #5  -- COURSE_CODE_MAP consumed from the single authoritative source
     (parametrized test lives in ``test_course_codes.py``).
   * HIGH #6  -- flag crosswalk semantics: ``(牝)`` -> ``race_flag_filly_only``
-    (NOT ``race_flag_mare_only``); ``(国際)`` -> ``race_flag_graded_stakes``.
+    (NOT ``race_flag_mare_only``); ``(国際)`` is intentionally NOT mapped to
+    ``race_flag_graded_stakes`` (UAT-Test-3 -- see Plan 04-07; true graded
+    detection comes from the GI/GII/GIII/重賞 token in the grade-bearing
+    ``<h1>``, not from the ``(国際)`` international-designation marker).
   * HIGH #10 -- ``resolve_columns_by_header`` maps ``<th>`` text to indices
     instead of relying on hardcoded ``cols[N]`` positions.
   * HIGH #9  -- ``TestParseRaceHtmlGolden`` runs ``parse_race_html`` against
@@ -425,9 +428,21 @@ class TestParseRaceHtmlGolden:
         assert race["obstacle"] == "障害"
 
     def test_flag_crosswalk_applied_on_graded_fixture(self) -> None:
-        """The G1 fixture sets ``race_flag_graded_stakes`` (Kaggle compat)."""
+        """The G1 fixture sets ``race_flag_graded_stakes`` via the GI token in <h1>.
+
+        Plan 04-07 removed the ``(国際)`` -> graded mapping (UAT-Test-3); under
+        the new code path ``graded_stakes=True`` comes from the GI token
+        harvested from the grade-bearing ``<h1>`` (第64回宝塚記念(GI)), NOT
+        from ``(国際)``. The ``(国際)(指)(定量)`` substring only contributes
+        ``condition_race`` (via ``(指)``) and ``bonus_weight`` (via
+        ``(定量)``). The ``grade`` assertion is added per WR-03 (Phase 04
+        review) -- it would have caught CR-02 (the '(L)' parenthesized
+        token defect on the Listed fixture).
+        """
         race = parse_race_html(FIXTURES_DIR / "202309030811.html")["race"]
-        # 宝塚記念 smalltxt: ``(国際)(指)(定量)`` -> graded_stakes / condition_race / bonus_weight
+        # graded_stakes=True comes from the harvested <h1> GI token
+        # (第64回宝塚記念(GI)), NOT from (国際) per Plan 04-07.
+        assert race["grade"] == "GI"
         assert race["race_flag_graded_stakes"] is True
         assert race["race_flag_condition_race"] is True  # from (指)
         assert race["race_flag_bonus_weight"] is True  # from (定量)
