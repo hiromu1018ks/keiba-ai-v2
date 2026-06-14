@@ -302,7 +302,11 @@ def fetch_race_html(
     # SCRP-05 dedup: skip non-empty existing files. Zero-byte files are
     # treated as missing and re-fetched.
     if out_path.exists() and out_path.stat().st_size > 0:
-        logger.info(f"Skipping existing {race_ref.race_id} at {out_path}")
+        # DEBUG (not INFO): the tqdm Scraping bar already shows per-race
+        # progress; an INFO line per skipped race (fires for every
+        # already-fetched race on resume) would interleave with and redraw
+        # the bar on stderr.
+        logger.debug(f"Skipping existing {race_ref.race_id} at {out_path}")
         return out_path
 
     url = f"https://db.netkeiba.com/race/{race_ref.race_id}/"
@@ -347,7 +351,10 @@ def fetch_race_html(
                 pass
         raise
 
-    logger.info(f"Saved {race_ref.race_id} -> {out_path}")
+    # DEBUG (not INFO): the tqdm Scraping bar already shows per-race progress.
+    # An INFO line per saved race would interleave with and force a redraw of
+    # the bar on every iteration, swamping the terminal on long batches.
+    logger.debug(f"Saved {race_ref.race_id} -> {out_path}")
     return out_path
 
 
