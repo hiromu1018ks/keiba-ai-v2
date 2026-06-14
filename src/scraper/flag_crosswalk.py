@@ -107,7 +107,7 @@ CLASS_PATTERNS: List[Tuple["re.Pattern[str]", str]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# GRADE_PATTERNS: regex matching grade designations.
+# _GRADE_REGEX: regex matching grade designations.
 #
 # Matches half-width (GI/GII/GIII/G1/G2/G3, JRA jump JG*) and full-width
 # (ＧＩ/ＧＩＩ/ＧＩＩＩ) forms. A match sets BOTH race_flag_graded_stakes
@@ -115,10 +115,18 @@ CLASS_PATTERNS: List[Tuple["re.Pattern[str]", str]] = [
 #
 # ``重賞`` substring alone (no GI/...) sets race_flag_stakes only.
 # ``(L)`` / ``(リステッド)`` sets race_flag_listed only.
+#
+# IMPORTANT: alternatives are ordered LONGEST-FIRST (GIII before GII before
+# GI, etc.). Python regex alternation returns the FIRST match at a position,
+# not the longest, so ``GI|GII|GIII`` would match the ``GI`` prefix of
+# ``GII`` and silently misclassify. This mirrors parser._GRADE_TOKEN_RE.
 # ---------------------------------------------------------------------------
 _GRADE_REGEX = re.compile(
-    r"(?:GI|GII|GIII|G1|G2|G3|JGI|JGII|JGIII|JG1|JG2|JG3"
-    r"|ＧＩ|ＧＩＩ|ＧＩＩＩ)"
+    r"(?:GIII|GII|GI|"            # half-width: long -> short
+    r"JGIII|JGII|JGI|"
+    r"G3|G2|G1|"
+    r"JG3|JG2|JG1|"
+    r"ＧＩＩＩ|ＧＩＩ|ＧＩ)"
 )
 _LISTED_REGEX = re.compile(r"\(L\)|（L）|\(リステッド\)|（リステッド）")
 _STAKES_REGEX = re.compile(r"重賞")
@@ -207,4 +215,9 @@ def derive_race_flags(
     return flags
 
 
-__all__ = ["FLAG_CROSSWALK", "CLASS_PATTERNS", "GRADE_PATTERNS", "derive_race_flags"]
+# CR-01 (Phase 04 review): ``GRADE_PATTERNS`` was previously advertised in
+# ``__all__`` but never defined (the actual regex is the private
+# ``_GRADE_REGEX`` above). ``derive_race_flags`` is the public API; there is
+# no need to expose the regex directly, so the symbol is removed from the
+# public surface rather than aliased.
+__all__ = ["FLAG_CROSSWALK", "CLASS_PATTERNS", "derive_race_flags"]
