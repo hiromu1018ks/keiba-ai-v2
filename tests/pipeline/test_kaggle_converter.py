@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.schemas.race import RaceSchema
+
 
 class TestDateFilter:
     """Test that convert() filters to races on or after 2015-01-01."""
@@ -632,3 +634,242 @@ class TestGradeDetection:
             "race_flag_listed column missing — _apply_grade_detection ran "
             "before _UNMAPPED_RACE_FLAGS added it (HIGH #1 cycle-3 regression)"
         )
+
+
+class TestRecastAndDtypes:
+    """Phase 6 D-02: _recast_to_canonical + regenerated Parquet dtypes."""
+
+    def test_recast_raises_on_bad_data(self) -> None:
+        """A non-coercible value (distance='abc') raises TypeError, not silent."""
+        from src.pipeline.kaggle_converter import _recast_to_canonical
+
+        df = pd.DataFrame({"distance": ["abc", "2000"], "race_id": ["X", "Y"]})
+        with pytest.raises(TypeError, match="distance"):
+            _recast_to_canonical(df, RaceSchema)
+
+    def test_kaggle_parquet_post_d02_has_typed_flags(self) -> None:
+        """Regenerated data/standard/kaggle/race.parquet has zero Arrow-null cols.
+
+        HIGH #4 dtype: every race_flag_* column must be Arrow bool (not null).
+        """
+        import pyarrow.parquet as pq
+        from pathlib import Path
+
+        race_path = Path("data/standard/kaggle/race.parquet")
+        if not race_path.exists():
+            pytest.skip("data/standard/kaggle/race.parquet not regenerated yet")
+        schema = pq.read_schema(race_path)
+        null_cols = [f.name for f in schema if str(f.type) == "null"]
+        assert null_cols == [], f"Arrow-null cols remain: {null_cols}"
+        flag_fields = [f for f in schema if f.name.startswith("race_flag_")]
+        assert len(flag_fields) >= 1, "no race_flag_* columns found"
+        for f in flag_fields:
+            assert str(f.type) == "bool", (
+                f"{f.name} type={f.type} (expected bool)"
+            )
+
+    def test_kaggle_race_distance_is_int64(self) -> None:
+        """distance column is Arrow int64 (D-02)."""
+        import pyarrow.parquet as pq
+        from pathlib import Path
+
+        race_path = Path("data/standard/kaggle/race.parquet")
+        if not race_path.exists():
+            pytest.skip("data/standard/kaggle/race.parquet not regenerated yet")
+        schema = pq.read_schema(race_path)
+        dist = [f for f in schema if f.name == "distance"]
+        assert len(dist) == 1, f"distance field count={len(dist)}"
+        assert str(dist[0].type) == "int64", (
+            f"distance type={dist[0].type} (expected int64)"
+        )
+
+    def test_kaggle_race_date_is_string(self) -> None:
+        """race_date column is Arrow string (MEDIUM #5 — string, NOT datetime)."""
+        import pyarrow.parquet as pq
+        from pathlib import Path
+
+        race_path = Path("data/standard/kaggle/race.parquet")
+        if not race_path.exists():
+            pytest.skip("data/standard/kaggle/race.parquet not regenerated yet")
+        schema = pq.read_schema(race_path)
+        rd = [f for f in schema if f.name == "race_date"]
+        assert len(rd) == 1
+        assert str(rd[0].type) == "string", (
+            f"race_date type={rd[0].type} (expected string per MEDIUM #5)"
+        )
+
+
+class TestCoreTablesSubdir:
+    """BLOCKER-1 + HIGH #2 cycle-3: core_tables_subdir redirect + odds/payoff SKIP."""
+
+    def _write_sample_raw(self, tmp_path, sample_race_result_df, sample_odds_df):
+        raw_dir = tmp_path / "raw" / "kaggle"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        sample_race_result_df.to_csv(
+            raw_dir / "19860105-20210731_race_result.csv",
+            index=False, encoding="utf-8-sig",
+        )
+        sample_odds_df.to_csv(
+            raw_dir / "19860105-20210731_odds.csv",
+            index=False, encoding="utf-8-sig",
+        )
+        return raw_dir
+
+    def test_convert_writes_core_tables_to_subdir(
+        self, sample_race_result_df, sample_odds_df, tmp_path,
+    ):
+        """BLOCKER-1: core_tables_subdir='kaggle' writes race/entry/result to subdir.
+
+        Also verifies the root-level race.parquet is NOT created (redirect).
+        """
+        from src.pipeline.kaggle_converter import convert
+
+        raw_dir = self._write_sample_raw(tmp_path, sample_race_result_df, sample_odds_df)
+        standard_dir = tmp_path / "standard"
+        standard_dir.mkdir(parents=True, exist_ok=True)
+
+        result = convert(
+            raw_dir=raw_dir, standard_dir=standard_dir,
+            core_tables_subdir="kaggle",
+        )
+
+        # race/entry/result went to subdir.
+        for tbl in ("race", "entry", "result"):
+            assert tbl in result, f"{tbl} missing from output_paths"
+            sub_path = standard_dir / "kaggle" / f"{tbl}.parquet"
+            assert sub_path.exists(), f"subdir file not created: {sub_path}"
+            assert result[tbl] == sub_path
+        # root-level race.parquet NOT created (redirect).
+        assert not (standard_dir / "race.parquet").exists(), (
+            "root race.parquet should NOT exist when core_tables_subdir is set"
+        )
+        # output_paths has NO odds/payoff keys (they were skipped).
+        assert "odds_trifecta" not in result, (
+            "odds_trifecta should NOT be in output_paths when subdir is set"
+        )
+        assert "payoff" not in result, (
+            "payoff should NOT be in output_paths when subdir is set"
+        )
+
+    def test_convert_skips_odds_payoff_when_subdir_set(
+        self, sample_race_result_df, sample_odds_df, tmp_path,
+    ):
+        """HIGH #2 cycle-3 explicit SKIP: odds/payoff absent from empty tmp dir.
+
+        Into an EMPTY standard_dir (no pre-existing odds/payoff), invoke
+        convert(core_tables_subdir='kaggle'). After: odds_trifecta.parquet and
+        payoff.parquet do NOT exist at the root (proves SKIP, not just
+        non-overwrite of pre-existing files).
+        """
+        from src.pipeline.kaggle_converter import convert
+
+        raw_dir = self._write_sample_raw(tmp_path, sample_race_result_df, sample_odds_df)
+        standard_dir = tmp_path / "standard"
+        standard_dir.mkdir(parents=True, exist_ok=True)
+
+        convert(
+            raw_dir=raw_dir, standard_dir=standard_dir,
+            core_tables_subdir="kaggle",
+        )
+
+        assert not (standard_dir / "odds_trifecta.parquet").exists(), (
+            "odds_trifecta.parquet must NOT exist in empty dir after subdir invocation"
+        )
+        assert not (standard_dir / "payoff.parquet").exists(), (
+            "payoff.parquet must NOT exist in empty dir after subdir invocation"
+        )
+
+    def test_convert_preserves_odds_payoff(
+        self, sample_race_result_df, sample_odds_df, tmp_path,
+    ):
+        """HIGH #2 cycle-3 NON-OVERWRITE: sentinel odds/payoff bytes UNCHANGED.
+
+        Pre-write distinctive sentinel odds_trifecta.parquet + payoff.parquet
+        with a marker row. Invoke convert(core_tables_subdir='kaggle'). After:
+        (a) sentinel files' SHA-256 AND row count IDENTICAL (NON-OVERWRITE —
+        convert did not touch them at all); (b) kaggle/ subdir race/entry/result
+        exist and are non-empty; (c) root race.parquet does NOT exist.
+        """
+        import hashlib
+        from src.pipeline.kaggle_converter import convert
+
+        raw_dir = self._write_sample_raw(tmp_path, sample_race_result_df, sample_odds_df)
+        standard_dir = tmp_path / "standard"
+        standard_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write distinctive sentinel odds/payoff with a marker row.
+        sentinel_odds = pd.DataFrame({
+            "race_id": ["SENTINEL_ODDS_999"],
+            "trifecta1_combo_1": [11], "trifecta1_combo_2": [22], "trifecta1_combo_3": [33],
+            "trifecta1_odds": [123.4], "trifecta1_popularity": [1],
+            "trifecta2_combo_1": [1], "trifecta2_combo_2": [2], "trifecta2_combo_3": [3],
+            "trifecta2_odds": [456.7], "trifecta2_popularity": [2],
+            "trifecta3_combo_1": [4], "trifecta3_combo_2": [5], "trifecta3_combo_3": [6],
+            "trifecta3_odds": [789.0], "trifecta3_popularity": [3],
+        })
+        sentinel_payoff = pd.DataFrame({
+            "race_id": ["SENTINEL_PAYOFF_999"],
+            "combo_1": [11], "combo_2": [22], "combo_3": [33],
+            "odds": [123.4], "payoff_amount": [None],
+        })
+        odds_path = standard_dir / "odds_trifecta.parquet"
+        payoff_path = standard_dir / "payoff.parquet"
+        sentinel_odds.to_parquet(odds_path, engine="pyarrow", index=False)
+        sentinel_payoff.to_parquet(payoff_path, engine="pyarrow", index=False)
+
+        def sha256(p):
+            return hashlib.sha256(p.read_bytes()).hexdigest()
+
+        odds_sha_pre = sha256(odds_path)
+        payoff_sha_pre = sha256(payoff_path)
+        odds_rows_pre = len(pd.read_parquet(odds_path))
+        payoff_rows_pre = len(pd.read_parquet(payoff_path))
+
+        convert(
+            raw_dir=raw_dir, standard_dir=standard_dir,
+            core_tables_subdir="kaggle",
+        )
+
+        # (a) NON-OVERWRITE: SHA-256 AND row count unchanged.
+        assert sha256(odds_path) == odds_sha_pre, (
+            "odds_trifecta.parquet SHA-256 changed — convert overwrote it "
+            "(HIGH #2 cycle-3 violation)"
+        )
+        assert sha256(payoff_path) == payoff_sha_pre, (
+            "payoff.parquet SHA-256 changed — convert overwrote it "
+            "(HIGH #2 cycle-3 violation)"
+        )
+        assert len(pd.read_parquet(odds_path)) == odds_rows_pre
+        assert len(pd.read_parquet(payoff_path)) == payoff_rows_pre
+
+        # (b) subdir race/entry/result exist and are non-empty.
+        for tbl in ("race", "entry", "result"):
+            sub_path = standard_dir / "kaggle" / f"{tbl}.parquet"
+            assert sub_path.exists(), f"subdir {tbl}.parquet not created"
+            assert len(pd.read_parquet(sub_path)) > 0, f"subdir {tbl}.parquet empty"
+
+        # (c) root race.parquet does NOT exist.
+        assert not (standard_dir / "race.parquet").exists()
+
+    def test_convert_default_writes_all_5_tables_to_root(
+        self, sample_race_result_df, sample_odds_df, tmp_path,
+    ):
+        """Backwards-compat: default invocation (no subdir) writes all 5 tables.
+
+        Phase 2 behavior is preserved: convert(..., standard_dir=X) with no
+        core_tables_subdir writes race/entry/result AND odds_trifecta/payoff
+        to X/'{table}.parquet'.
+        """
+        from src.pipeline.kaggle_converter import convert
+
+        raw_dir = self._write_sample_raw(tmp_path, sample_race_result_df, sample_odds_df)
+        standard_dir = tmp_path / "standard"
+        standard_dir.mkdir(parents=True, exist_ok=True)
+
+        result = convert(raw_dir=raw_dir, standard_dir=standard_dir)
+
+        for tbl in ("race", "entry", "result", "odds_trifecta", "payoff"):
+            assert tbl in result, f"{tbl} missing from output_paths (default path)"
+            assert result[tbl].exists(), f"{tbl}.parquet not created (default path)"
+            # All at root, NOT in a subdir.
+            assert result[tbl] == standard_dir / f"{tbl}.parquet"

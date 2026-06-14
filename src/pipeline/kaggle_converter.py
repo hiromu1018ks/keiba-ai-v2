@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 from loguru import logger
+from pydantic import BaseModel
 
 from src.pipeline.column_mapping import (
     DTYPE_SPEC,
@@ -27,9 +28,11 @@ from src.pipeline.column_mapping import (
     get_columns_for_table,
 )
 from src.scraper.flag_crosswalk import derive_race_flags
+from src.scraper.normalizer import SCHEMA_DTYPE_MAP, _atomic_write_parquet
 from src.schemas.audit import audit_leakage
 from src.schemas.entry import EntrySchema
 from src.schemas.race import RaceSchema
+from src.schemas.result import ResultSchema
 
 
 # Flag fields defined in RaceSchema but with no text-derived source in the
@@ -136,9 +139,38 @@ def _apply_grade_detection(race_df: pd.DataFrame) -> pd.DataFrame:
     return race_df
 
 
+def _recast_to_canonical(df: pd.DataFrame, schema: type[BaseModel]) -> pd.DataFrame:
+    """Recast a DataFrame's columns to the canonical dtypes in SCHEMA_DTYPE_MAP.
+
+    Phase 6 D-02: the Kaggle-side Parquet must match the scraped-side dtype
+    contract (src.scraper.normalizer.SCHEMA_DTYPE_MAP) so the two corpora are
+    schema-indistinguishable before the Wave 2 merge. Mirrors
+    ``_build_typed_dataframe`` (normalizer.py) but operates on an existing
+    DataFrame rather than building from row dicts.
+
+    Iterates ``SCHEMA_DTYPE_MAP[schema].items()``; skips columns not present in
+    ``df``; casts each present column to its target dtype inside a try/except
+    that RE-RAISES as ``TypeError`` with a column-name message. NEVER uses the
+    silent ``ignore`` error mode (Cycle-2 #3 strict-path discipline).
+    """
+    dtype_map = SCHEMA_DTYPE_MAP[schema]
+    for col, target in dtype_map.items():
+        if col not in df.columns:
+            continue
+        try:
+            df[col] = df[col].astype(target)
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                f"_recast_to_canonical: column {col!r} could not be coerced "
+                f"to {target!r} for {schema.__name__}: {e}"
+            ) from e
+    return df
+
+
 def convert(
     raw_dir: Path = Path("data/raw/kaggle"),
     standard_dir: Path = Path("data/standard"),
+    core_tables_subdir: str | None = None,
 ) -> dict[str, Path]:
     """Main entry point: CSV -> filter -> split -> transform -> write -> audit.
 
@@ -147,15 +179,25 @@ def convert(
     2. Filter to 2015+ flat races (D-01 obstacle exclusion)
     3. Split race_result into race/entry/result tables
     4. Extract odds_trifecta and payoff from odds.csv
-    5. Write 5 Parquet files to standard_dir
+    5. Write Parquet files (see core_tables_subdir below for write routing)
     6. Run audit_leakage() on race and entry tables
 
     Args:
         raw_dir: Directory containing Kaggle CSV files.
         standard_dir: Directory to write Parquet output files.
+        core_tables_subdir: When set (truthy), race/entry/result are written to
+            ``standard_dir / core_tables_subdir /`` (a STABLE separate input
+            path for Plan 06-02 idempotent integration) AND odds_trifecta/payoff
+            writes are SKIPPED ENTIRELY — they are NOT written to root, subdir,
+            or anywhere. This protects the Phase 5 seed at
+            ``data/standard/{odds_trifecta,payoff}.parquet`` from overwrite
+            (HIGH #2 cycle-3). When None (default, Phase 2 backwards-compat),
+            all 5 tables are written to ``standard_dir / '{table}.parquet'``.
 
     Returns:
-        Dict mapping table names to output Parquet file paths.
+        Dict mapping table names to output Parquet file paths. When
+        ``core_tables_subdir`` is set, contains ONLY race/entry/result keys
+        (no odds/payoff keys). When None, contains all 5 keys.
     """
     raw_dir = Path(raw_dir)
     standard_dir = Path(standard_dir)
@@ -192,23 +234,52 @@ def convert(
     odds_df["レースID"] = odds_df["レースID"].astype(str)
     odds_trifecta_df, payoff_df = extract_odds_tables(odds_df, valid_race_ids)
 
-    # Step 5: Write Parquet files
+    # Step 5: Write Parquet files.
+    #
+    # HIGH #2 cycle-3 + BLOCKER-1: when core_tables_subdir is set, race/entry/
+    # result redirect to standard_dir / core_tables_subdir / (a STABLE separate
+    # input path for Plan 06-02 integration), and odds/payoff are SKIPPED
+    # ENTIRELY — not written to root, subdir, or anywhere. This protects the
+    # Phase 5 seed at data/standard/{odds_trifecta,payoff}.parquet from any
+    # overwrite. They are re-derivable from data/raw/kaggle/*_odds.csv if needed.
+    #
+    # When core_tables_subdir is None (default, Phase 2 backwards-compat), all
+    # 5 tables are written to standard_dir / '{table}.parquet' as before.
     standard_dir.mkdir(parents=True, exist_ok=True)
 
-    output_paths: dict[str, Path] = {}
-    tables = {
+    core_tables = {
         "race": race_df,
         "entry": entry_df,
         "result": result_df,
-        "odds_trifecta": odds_trifecta_df,
-        "payoff": payoff_df,
     }
+    core_out_dir = (
+        standard_dir / core_tables_subdir if core_tables_subdir else standard_dir
+    )
 
-    for table_name, table_df in tables.items():
-        output_path = standard_dir / f"{table_name}.parquet"
-        table_df.to_parquet(output_path, engine="pyarrow", compression="snappy", index=False)
+    output_paths: dict[str, Path] = {}
+
+    for table_name, table_df in core_tables.items():
+        output_path = core_out_dir / f"{table_name}.parquet"
+        _atomic_write_parquet(table_df, output_path)
         output_paths[table_name] = output_path
         logger.info(f"Wrote {table_name}: {len(table_df)} rows -> {output_path}")
+
+    if core_tables_subdir is None:
+        # Phase 2 backwards-compat: write odds/payoff to standard_dir root.
+        odds_tables = {
+            "odds_trifecta": odds_trifecta_df,
+            "payoff": payoff_df,
+        }
+        for table_name, table_df in odds_tables.items():
+            output_path = standard_dir / f"{table_name}.parquet"
+            _atomic_write_parquet(table_df, output_path)
+            output_paths[table_name] = output_path
+            logger.info(f"Wrote {table_name}: {len(table_df)} rows -> {output_path}")
+    else:
+        logger.info(
+            f"core_tables_subdir={core_tables_subdir!r}: SKIPPED odds_trifecta/"
+            f"payoff writes entirely (HIGH #2 cycle-3 — Phase 5 seed protected)"
+        )
 
     # Step 6: Audit for data leakage
     logger.info("Running data leakage audit")
@@ -372,6 +443,12 @@ def split_race_entry_result(
     # columns; calling earlier KeyErrors or has its OR-merge result clobbered
     # to pd.NA by the subsequent pd.NA write in that loop.
     race_df = _apply_grade_detection(race_df)
+
+    # Phase 6 D-02: recast to canonical nullable dtypes (SCHEMA_DTYPE_MAP) so
+    # the Kaggle-side Parquet matches the scraped-side dtype contract.
+    race_df = _recast_to_canonical(race_df, RaceSchema)
+    entry_df = _recast_to_canonical(entry_df, EntrySchema)
+    result_df = _recast_to_canonical(result_df, ResultSchema)
 
     return race_df, entry_df, result_df
 
