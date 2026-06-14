@@ -1,17 +1,28 @@
 ---
 phase: 06-data-integration
 reviewers: [codex]
-reviewed_at: 2026-06-14T19:30:00+09:00
+reviewed_at: 2026-06-14T19:55:00+09:00
 plans_reviewed:
   - 06-01-PLAN.md
   - 06-02-PLAN.md
   - 06-03-PLAN.md
-cycle: 1
+cycle: 2
+prior_cycle_high: 14
 ---
 
-# Cross-AI Plan Review — Phase 6
+# Cross-AI Plan Review — Phase 6 (Cycle 2)
 
-Single-reviewer cycle (Codex / gpt-5.5 via `codex exec`). Reviewer had read access to the repository and verified code references live; the orchestrator independently re-verified the four load-bearing HIGH claims against the working tree (see "Orchestrator verification" block at the end of each plan's Concerns).
+Cycle-2 re-review. The three PLAN.md files were replanned under `--reviews` to address the
+14 HIGHs from cycle 1. Codex (gpt-5.5 via `codex exec`) re-reviewed the revised plans with
+repository read access. The orchestrator independently re-verified each of Codex's
+load-bearing claims against the working tree (verifications inlined in the Concerns
+sections below).
+
+**Headline:** the replan resolved 7 of 14 cycle-1 HIGHs fully (#4, #5, #7, #8, #9, #10,
+#12, #13 — 8 by the strict RESOLVED count, since #4 poetry is shared across all three
+plans). 7 HIGHs remain unresolved in cycle 2: 3 are genuinely NOT RESOLVED (the replan's
+mechanism does not achieve the claimed effect), 3 are PARTIALLY RESOLVED (mechanism present
+but enforcement incomplete), and 1 is newly raised.
 
 ---
 
@@ -21,49 +32,34 @@ Single-reviewer cycle (Codex / gpt-5.5 via `codex exec`). Reviewer had read acce
 
 **Summary**
 
-D-01/D-02を統合前に解消する順序は適切ですが、現状の計画には実行を阻害する重大な誤認があります。特にKaggle変換側には`GRADE_REGEX`による重賞判定が存在しないため、`(国際)`マッピングを削除するだけでは約838件にはならず、`race_flag_graded_stakes`がほぼ全消失します。また「8項目検証」は実際には3項目を省略しています。
+D-01、出力分離、validator引数、setuptools対応の方向性は正しいが、実装順序と5テーブルwrite契約の確認が不足している。現状の記述どおりではgrade detectorが実行時エラー（KeyError）になり、odds/payoffも引き続き上書きされ、8項目検証も成功しない。
 
-**Strengths**
+### Cycle-1 HIGH Adjudication (06-01)
 
-- dtype調停を統合処理ではなく生成元で直す方針は妥当。
-- `SCHEMA_DTYPE_MAP`を単一の型契約として再利用している。
-- 不正値を`errors="ignore"`で隠さず、`TypeError`にする方針は適切。
-- Parquet書き込みの原子化は破損リスクを軽減する。
-- `FLAG_COLUMNS`から`(国際)`を削除しない判断は正しい。
-- 実コード上、以下の参照は確認できた。
-  - `KAGGLE_COLUMN_MAP`の`(国際)`マッピング
-  - `SCHEMA_DTYPE_MAP`
-  - `_atomic_write_parquet(df, path)`
-  - `run_all_validations(raw_dir, parquet_dir, source_counts=None, source_stats=None)`
+| # | Verdict | Evidence |
+|---|---------|----------|
+| 1 (D-01 GRADE_REGEX) | **NOT RESOLVED** | PLAN calls `_apply_grade_detection` "immediately AFTER `convert_flags_to_bool`" (`split_race_entry_result` line ~248). But `race_flag_stakes` and `race_flag_listed` are in `_UNMAPPED_RACE_FLAGS` (`kaggle_converter.py:39,42`) and are added as `pd.NA` at lines 251-252, AFTER line 248. So the helper's OR-merge result for `stakes`/`listed` gets CLOBBERED to `pd.NA` by the subsequent unmapped-flags loop. Worse, at line 248 those two columns do not yet exist on `race_df`, so `existing = race_df[col]` raises `KeyError` on `race_flag_stakes` and `race_flag_listed`. The plan's WARNING-2 OR-merge is defeated by call ordering. Additionally the plan's hermetic test `grade="GⅠ"` (`06-01-PLAN.md:141`) does not match `_GRADE_REGEX` (`flag_crosswalk.py:124`): `GⅠ` is half-width `G` (0x47) + full-width `Ⅰ` (0xFF21), which matches NEITHER the half-width alternative `GI` nor the full-width alternative `ＧＩ` (0xFF27 0xFF29). |
+| 2 (convert() overwrites odds/payoff) | **NOT RESOLVED** | The PLAN's own action text (`06-01-PLAN.md:178`) states: "For odds_trifecta/payoff: `out_dir = standard_dir` (ALWAYS the root, regardless of `core_tables_subdir`)". So `convert(core_tables_subdir='kaggle')` STILL WRITES odds/payoff to `data/standard/`, overwriting any pre-existing `odds_trifecta.parquet` / `payoff.parquet`. The `core_tables_subdir` param only redirects race/entry/result; it does NOT stop odds/payoff from being written. The SHA-256 equality test (`test_convert_preserves_odds_payoff`) only proves the REGENERATED odds/payoff match the pre-existing ones in VALUE (same source CSV re-derived), not that they were not rewritten. This is a real D-05 violation. |
+| 3 (8-point verification skips 3-4 checks) | **PARTIALLY RESOLVED** | The mechanism (supply non-None `source_counts` + `source_stats`) is present (`06-01-PLAN.md:255-259`). BUT `run_all_validations(raw, Path('data/standard/kaggle'), ...)` runs check 6 (`validate_referential_integrity`) which hard-appends `"Missing odds_trifecta.parquet"` and `"Missing payoff.parquet"` to its error list when those files are absent from `parquet_dir` (`validators.py:377-383`). The 3-table `kaggle/` subdir has NO odds/payoff → `integrity_errors` non-empty → `integrity_pass=False` → `overall_pass=False`. The plan's `assert r['overall_pass'] is True` will FAIL. The plan anticipates this (option (a) vs (b)) but defers the decision to "read the source first" without resolving it. |
+| 4 (poetry) | **RESOLVED** | All `<verify><automated>` commands use `python -m pytest` / `python -c` (`06-01-PLAN.md:134,190,243`). `pyproject.toml` build-backend is setuptools. |
 
-**Concerns**
+### New Concerns (06-01)
 
-- **HIGH — Task 1 / D-01:** Kaggle変換側には`GRADE_REGEX`がない。`GRADE_REGEX`は`src/scraper/flag_crosswalk.py`だけにあり、`kaggle_converter.py`からは呼ばれていない。マッピング削除だけでは「GI/GII/GIIIのみ約838件」という結果にならない。
-- **HIGH — Task 3:** `source_counts=None`と`source_stats=None`では、行数・null率・分布の3検証が空で成功扱いになる。「Phase 2 D-05 8-point verification passes」という表現は不正確。
-- **HIGH — 全Task:** コマンドが`poetry run`になっているが、このリポジトリはpip/setuptools運用でPoetry未使用。実行環境によって計画が即座に失敗する。
-- **MEDIUM — D-02:** CONTEXTでは`race_date`をdatetimeにするとあるが、実際の`SCHEMA_DTYPE_MAP[RaceSchema]["race_date"]`は`"string"`。計画と型契約が矛盾している。
-- **MEDIUM — Task 2:** `convert()`はrace/entry/resultだけでなく、`odds_trifecta`と`payoff`も上書きする。`files_modified`および後続計画の「odds/payoff unchanged」と整合しない。
-- **MEDIUM — Task 2:** 別パッケージのprivate関数`_atomic_write_parquet`へ依存する。共有ユーティリティへ移す方が所有境界として明確。
-- **LOW — コード参照:** 行番号は現在おおむね近いが、編集後にずれるため、行番号を受入条件に使うのは脆い。
+- **HIGH — `_apply_grade_detection` call ordering causes KeyError + clobbers OR-merge result.** As detailed in #1: the helper runs at line 248 but the columns it modifies for `stakes`/`listed` are created at 251-252 as `pd.NA`. Either the helper must run AFTER the unmapped-flags loop, or it must defensively initialize the 3 columns as nullable-boolean before OR-merging. The plan specifies neither.
+- **HIGH — `core_tables_subdir` does not protect odds/payoff.** The plan's "ALWAYS write odds/payoff to root" rule means the Phase 5 seed at `data/standard/odds_trifecta.parquet` is overwritten on every `convert(core_tables_subdir='kaggle')` call. The fix should EXCLUDE odds/payoff from the write loop when `core_tables_subdir` is set, or guard with an existence check.
+- **HIGH — 3-table subdir vs 5-table validator structural incompatibility.** `run_all_validations` iterates all 5 tables (race/entry/result/odds_trifecta/payoff) and treats missing odds/payoff as a referential-integrity failure. A 3-table `kaggle/` subdir cannot pass `overall_pass=True` without a dedicated 3-table validator or the option-(b) symlink shim the plan defers.
+- **MEDIUM — `derive_race_flags` early-returns on empty `race_condition`.** `flag_crosswalk.py:184-185`: `if not race_condition: return flags`. The plan passes `race_condition=str(row["grade"])`. When `grade` is null (non-graded Kaggle races), the helper returns ALL-None flags even if `race_name` alone contains a GI token. The plan's `_apply_grade_detection` passes `""` for the condition in that case, so `race_name`-only grade tokens are NOT detected. Fix: pass `race_condition=" "` (non-empty) when grade is null, or change the early-return guard.
+- **MEDIUM — Kaggle `grade` value `"L"` does not match `_LISTED_REGEX`.** `_LISTED_REGEX = r"\(L\)|（L）|\(リステッド\)|（リステッド）"` (`flag_crosswalk.py:131`) requires the parenthesized form. The Kaggle `リステッド・重賞競走` field stores bare `"L"` / `"リステッド"` (no parens) for listed races. So the listed derivation the plan promises is incomplete.
+- **MEDIUM — `grade_revision` mentioned as input (`06-01-PLAN.md:118`) but the helper only consumes `grade` + `race_name`.** The `重賞回次` (grade_revision) field is never read by `_apply_grade_detection`; the test description is inconsistent with the action.
 
-**Suggestions**
+### Suggestions (06-01)
 
-- Kaggle側にも`grade`や`race_name`を入力とする共通の重賞判定関数を適用し、個別テストを追加する。
-- 約838件の範囲チェックではなく、`grade`から導出した期待値との行単位比較にする。
-- 再検証時は変換前に`source_counts`と`source_stats`を取得し、8項目すべてを実際に実行する。
-- 全コマンドを`python -m pytest`、`python -c`へ変更する。
-- `race_date`はstringかdatetimeのどちらを標準契約とするか決定し、CONTEXTとコードを統一する。
-- odds/payoffを保存するか、変換前後のchecksum一致を検証する。
+- Move `_apply_grade_detection` AFTER the `_UNMAPPED_RACE_FLAGS` loop, OR have the helper defensively create `race_flag_stakes`/`race_flag_listed`/`race_flag_graded_stakes` as nullable-boolean Series before OR-merging.
+- Normalize the grade value before testing: accept `GⅠ/GⅠ/G1/JpnI/L` explicitly rather than relying on `_GRADE_REGEX` which only handles half/full-width ASCII `GI`.
+- When `core_tables_subdir` is set, EXCLUDE odds/payoff from the write loop entirely (do not write them at all), preserving the Phase 5 seed.
+- Add a dedicated 3-table validator OR implement the symlink shim (option b) so `run_all_validations` finds all 5 tables; assert `overall_pass=True` AND that the result dict shows all 8 check keys actually executed.
 
-**Risk Assessment**
-
-**HIGH**。D-01の実装案では重賞フラグの正解値を生成できず、Wave 2へ誤ったデータを渡す可能性があります。
-
-> **Orchestrator verification (06-01 HIGHs):**
-> - **GRADE_REGEX:** Confirmed. `grep GRADE_REGEX src/pipeline/kaggle_converter.py` → no match. The regex lives only in `src/scraper/flag_crosswalk.py:124` (`_GRADE_REGEX`). The Kaggle converter has no grade-detection path; deleting the `(国際)` mapping would make `race_flag_graded_stakes` False for *all* Kaggle rows, not ~838. The plan's 780–880 acceptance band is therefore unreachable as written.
-> - **8-point skip:** Confirmed. `src/pipeline/validators.py` gates `validate_row_counts` (line 791), `validate_null_rates` (801), `validate_distributions` (807), and a 4th block (825) all behind `if source_counts is not None` / `if source_stats is not None`. The plan invokes `run_all_validations(Path('data/raw/kaggle'), Path('data/standard'))` with both optional args omitted, so ~3-4 of the 8 checks are skipped rather than passing.
-> - **poetry:** Confirmed. `which poetry` → not found. `pyproject.toml` uses `[build-system] requires = ["setuptools>=68.0"]` / `build-backend = setuptools.build_meta`. Every `poetry run …` command in all three plans will fail. Use `python -m pytest` / `python -c …` (or `python3 -m …`).
-> - **convert() overwrites odds/payoff:** Confirmed. `src/pipeline/kaggle_converter.py:107-117` builds `tables = {…, "odds_trifecta": …, "payoff": …}` and writes all five. Plan 06-01 Task 2 invokes `convert()` (defaults) which will overwrite `data/standard/odds_trifecta.parquet` and `payoff.parquet`, violating D-05 and invalidating Plan 06-03's "odds/payoff unchanged" assertion.
+**Risk Assessment: HIGH.** The grade detector as specified will raise KeyError at runtime or silently clobber its own result; odds/payoff are still overwritten; the 8-point verification cannot return True against the kaggle/ subdir.
 
 ---
 
@@ -71,43 +67,30 @@ D-01/D-02を統合前に解消する順序は適切ですが、現状の計画�
 
 **Summary**
 
-統合処理の基本構造は小さく理解しやすい一方、入力と出力が同じパスであるため再実行不能で、3テーブルを一括更新するトランザクション性もありません。またテストのskip設計、参照整合性検証、スキーマ検証が計画内で矛盾しています。
+入力分離、skip分離、FKテスト、列集合検証は具体的で、cycle 1の多くを解消している。ただし3ファイルの逐次`os.replace`はcorpus transactionではなく、swap途中の障害でmixed generationが残る。rollbackテストもない。
 
-**Strengths**
+### Cycle-1 HIGH Adjudication (06-02)
 
-- `SCHEMA_BY_TABLE`による3テーブル限定はodds/payoff保護に有効。
-- PK重複を黙って除去せず停止する方針は適切。
-- canonical column orderへの統一とnullable dtype再適用は必要。
-- per-rowログを避けた設計は性能面で妥当。
-- 一時ディレクトリを使うhermeticテストの方針は良い。
-- `source`列をstandard層に追加しない決定と整合する。
+| # | Verdict | Evidence |
+|---|---------|----------|
+| 5 (non-idempotent) | **RESOLVED** | `integrate_standard_layer` reads Kaggle from `kaggle_input_dir` (default `standard_dir/'kaggle'`), never from the output path (`06-02-PLAN.md:197`). Two-run SHA-equality idempotency test present (`06-02-PLAN.md:172`). |
+| 6 (no corpus transactionality) | **PARTIALLY RESOLVED** | The mechanism writes all 3 frames to a tmp dir, validates, then swaps via `os.replace` (`06-02-PLAN.md:209`). However, THREE SEQUENTIAL `os.replace` calls are not one atomic operation. If the 2nd `os.replace` raises (disk full, permission, signal), the corpus is left with race=new + entry=result=old. The plan has no rollback (no backup-and-restore of the pre-swap files) and no test that injects a mid-swap failure to prove the corpus stays consistent. The idempotency test only proves two CLEAN runs match — it does not test transactionality. |
+| 7 (autouse skip swallows hermetic) | **RESOLVED** | Split into `TestIntegrationHermetic` (no autouse) + `TestUnifiedCorpus` (gated `_require_scraped_data`) (`06-02-PLAN.md:122`). Verify collects 7 hermetic + 2 gated. |
+| 8 (FK test no-op) | **RESOLVED** | Injects orphan `entry.race_id`, asserts `validate_integrity` reports it, integration raises `ValueError` (`06-02-PLAN.md:167`). Matches `validate_integrity`'s FK contract (`normalizer.py:338-354`). |
+| 9 (reindex masks schema drift) | **RESOLVED** | `_assert_column_set_equality` raises `ValueError` BEFORE reindex; test injects extra/missing column (`06-02-PLAN.md:203`). |
 
-**Concerns**
+### New Concerns (06-02)
 
-- **HIGH — `integrate_standard_layer`:** 入力`standard/{table}.parquet`を同じパスへ上書きするため、2回目は「統合済みデータ + scraped」を結合し、全scraped PKが重複して失敗する。再実行可能性がない。
-- **HIGH — 書き込み処理:** raceを書いた後にentry/resultで失敗すると、異なる世代の3ファイルが残る。ファイル単位のatomic writeだけではcorpus全体の整合性を保証できない。
-- **HIGH — Task 1:** `TestUnifiedCorpus`のautouse `_require_scraped_data`はクラス内のhermeticテストもskipする。計画中の「fast-pathはskip gateを持たない」と矛盾する。
-- **HIGH — Task 2:** 「referential integrity」を実装していない。正常データで「例外が出ない」テストは、FK検証が存在しなくても通るため無効。
-- **HIGH — Task 2:** `reindex()`は余分な列を黙って捨て、不足列をNAで追加する。入力側のスキーマドリフトを隠し、成功基準#2を誤って通す可能性がある。
-- **MEDIUM — テスト数:** 「8 tests」と記載されているが、列挙されたメソッドは9件。
-- **MEDIUM — audit:** `audit_leakage`をimportするとしているが、実装手順には実際のaudit呼び出しがない。
-- **MEDIUM — 入力エラー:** Kaggleファイル欠落、scraped partitionなし、月内の特定テーブル欠落に対する明示的なエラー処理がない。
-- **MEDIUM — 成功基準#2:** `source`列がないことは「起源を区別できない」の十分条件ではない。列型・null表現・値域の検証が必要。
-- **LOW — private API:** Plan 06-01と同様に`_atomic_write_parquet`へ直接依存している。
+- **HIGH — corpus-swap failure leaves mixed generation; no rollback.** Three sequential `os.replace` calls are not atomic. A failure on the 2nd or 3rd replace leaves race=new + entry/result=old (or any partial combination). No backup-and-restore of the pre-existing output files, and no test injecting a mid-swap failure.
+- **MEDIUM — fixed tmp dir path `.integration_tmp` collides on concurrent runs / stale leftovers.** If a prior run crashed and left the tmp dir, the next run may pick up stale files. Use `tempfile.mkdtemp()` (the plan mentions both options but does not commit to one).
+- **LOW — `PK_BY_TABLE = {race: race_id, entry: horse_race_id, result: horse_race_id}` is CORRECT.** `validate_integrity` checks entry/result uniqueness on `horse_race_id` and FK on `race_id` (`normalizer.py:274-372`); the plan's per-table dedup-on-PK assertion matches.
 
-**Suggestions**
+### Suggestions (06-02)
 
-- Kaggle-only入力を`data/standard/kaggle/`などに固定するか、統合前に一時入力スナップショットを作り、再実行可能にする。
-- 3ファイルを一時ディレクトリへすべて生成・検証した後、一括切替する。
-- `reindex()`前に列集合の完全一致をassertする。
-- `validate_integrity()`を再利用し、FK欠損を実際に`ValueError`へする。
-- hermeticテストとreal-corpusテストを別クラスまたはmarkerで分離する。
-- テスト件数を9件へ修正するか、重複するD-01/D-02テストをPlan 06-01へ残して8件にする。
-- 欠落ファイル、空partition、壊れたParquetのテストを追加する。
+- Implement directory-level swap: write all 3 to a versioned tmp dir, then rename the dir into place (single atomic op), OR back up the 3 pre-existing output files and restore on any swap failure.
+- Add a test that monkeypatches the 2nd `os.replace` to raise, then asserts the 3 output files are byte-identical to their pre-call SHA-256.
 
-**Risk Assessment**
-
-**HIGH**。初回統合は動く可能性がありますが、再実行不能と部分更新リスクはstandard corpusの信頼性を損なう重大な設計欠陥です。
+**Risk Assessment: HIGH.** Idempotency, skip-split, FK, and column-set guards are solid. But the transactionality claim is not actually enforced — a partial swap is a real mixed-generation risk that propagates to Phase 7/9.
 
 ---
 
@@ -115,124 +98,92 @@ D-01/D-02を統合前に解消する順序は適切ですが、現状の計画�
 
 **Summary**
 
-実データでROADMAP基準を確認する最終waveとしての位置付けは正しいですが、現在のリポジトリは`data/standard/scraped/202306`の5レースのみで、既知の前提未達です。また、年月ディレクトリ数だけのゲート、弱い日付検証、統合後の重賞件数期待値などに問題があります。
+odds/payoff snapshotと固定band廃止は改善されている。しかしpreflightの実コマンドはentry/resultの非空性を検証しておらず、日付上限も「入力に存在する最大日」と比較するだけでD-06の2026年5月到達を保証しない。PK-set union検証もrace tableだけ。
 
-**Strengths**
+### Cycle-1 HIGH Adjudication (06-03)
 
-- smoke-onlyデータで本番統合しない停止条件を設けている。
-- 行数、日付、PK、FK、型、leak auditをまとめて確認する方針は適切。
-- human verificationを自動検証後に置いている。
-- odds/payoffを統合対象外として確認する考え方は妥当。
-- 現在の実データ状態は計画の記述どおり、202306の1partitionのみであることを確認できた。
+| # | Verdict | Evidence |
+|---|---------|----------|
+| 10 (D-06 pre-task not done) | **RESOLVED** | Real corpus is still `202306` only (5 races), but the `< 40` partitions halt gate exits 1 with a clear message (`06-03-PLAN.md:115`). The plan does NOT weaken the gate. |
+| 11 (month-count gate weak) | **NOT RESOLVED** | The PROSE describes per-partition 3-file presence + non-empty + race_date-matches-dir (`06-03-PLAN.md:94-96`), but the ACTUAL `<verify><automated>` command (`06-03-PLAN.md:124-128`) only reads `race.parquet` for non-empty + date. The entry/result non-empty check (`06-03-PLAN.md:122-127`) wraps a `pd.read_parquet` in a bare `except Exception: pass` and the `n` variable is computed but NEVER asserted (`> 0`). Empty `entry.parquet` / `result.parquet` files pass the verify. |
+| 12 (odds/payoff snapshot not in verify) | **RESOLVED** | Pre/post SHA-256 + row count snapshot/assert IS in the actual `<verify><automated>` command (`06-03-PLAN.md:202-223`), not just prose. |
+| 13 (graded 780-880 wrong) | **RESOLVED** | Kaggle/scraped periods split; each compared to `derive_race_flags` derivation, not a fixed band (`06-03-PLAN.md:225-233`). |
+| 14 (date-range too weak) | **PARTIALLY RESOLVED** | min in 2015-01..03, max EQUALS actual scraped max, per-year counts (`06-03-PLAN.md:235-257`). BUT `actual_scraped_max` is computed from the SAME input partitions as `dmax` (output), so the assertion `dmax == actual_scraped_max` is self-referential: if the D-06 scrape stopped at 2025-12, both are 2025-12-x and the assertion passes despite the 2026-05 target being unreached. Missing years are warning-only, not fail (`06-03-PLAN.md:258`). The check is robust to NO data being dropped, but NOT robust to the scrape being INCOMPLETE. |
 
-**Concerns**
+### New Concerns (06-03)
 
-- **HIGH — 前提条件:** 現在は1か月・5レースのみであり、Plan 06-03は現状のままでは完了できない。
-- **HIGH — Task 1:** 「40ディレクトリ以上」は完全性を保証しない。空ファイル、欠落テーブル、不正な日付範囲、途中月だけでも通過し得る。
-- **HIGH — Task 2:** odds/payoffの「事前snapshot」は実行コマンドに含まれていない。統合後に行数を見るだけでは上書きされなかった証明にならない。
-- **HIGH — Task 3:** 統合後の`graded_stakes=True`を780–880とする期待値は誤り。2022–2026の重賞レースが追加されるため、統合全体の件数はKaggleのみの約838より増える。
-- **HIGH — 日付検証:** `max().startswith("2024") or startswith("2026")`は弱すぎる。2024年1月だけ、または2026年1月までしかなくても通る。
-- **HIGH — 再実行:** Plan 06-02の設計のままでは、失敗後やhuman-check時の再統合が重複エラーになる。
-- **MEDIUM — 行数検証:** 単なる下限値では、partition欠落や一部行損失を検出できない。入力partitionのPK集合との一致が必要。
-- **MEDIUM — スコープ整合性:** ROADMAP/REQUIREMENTSは2015–2024のままだが、計画は2015–2026/5へ拡張している。下流のPhase 9は2015–2024前提であり、正式な仕様更新か明示的な期間フィルタが必要。
-- **MEDIUM — 日付表現:** `race_date`がstringである現行契約を前提にした検証になっており、CONTEXTのdatetime方針と矛盾する。
-- **LOW — 実行コマンド:** ここでも`poetry run`はリポジトリの実際の運用と一致しない。
+- **HIGH — preflight "3-file non-empty" not actually implemented in verify.** The verify command's entry/result loop swallows all exceptions and never asserts `n > 0`. An empty `entry.parquet` or `result.parquet` passes.
+- **HIGH — `actual_scraped_max` comparison is self-referential; does not enforce D-06 target reach.** D-06 is premised on a full 2022-01 → 2026-05 scrape. Comparing the output max to the input max proves no data was dropped during integration, but ACCEPTS an incomplete scrape as "complete." Need an explicit floor (e.g. `dmax >= '2026-01-01'`) or an expected-months-set diff with a defined tolerance.
+- **NEW HIGH — PK-set union verify checks race only, not entry/result.** The plan's prose says "per table" (`06-03-PLAN.md:188`) and MEDIUM #20 is described as per-table, but the actual `<verify><automated>` PK-set equality block (`06-03-PLAN.md:261-271`) only reads `race.parquet`. Entry/result PK-set drift (dropped horses during merge) is undetected.
+- **MEDIUM — "40 directories" does not guarantee 53-month continuity.** Missing months are logged, not failed. A corpus with 40 non-contiguous months (e.g. gaps in 2023) passes.
 
-**Suggestions**
+### Suggestions (06-03)
 
-- 月ディレクトリ数ではなく、各partitionのrace日付、3ファイル存在、非空性、PK/FK整合性を検証するpreflightを実装する。
-- 統合前にodds/payoffのSHA-256、行数、Arrow schemaを保存し、統合後に完全一致を確認する。
-- 期待行数を各入力partitionの一意PK集合から算出し、統合出力と集合一致させる。
-- 日付範囲は期待する最初・最後の実開催日、または少なくとも年ごとのレース数で検証する。
-- 重賞件数はKaggle期間とscraped期間を分けて検証する。
-- 2015–2026/5への拡張を採用するならROADMAP/REQUIREMENTSもこのphaseで更新する。
-- full suiteは`python -m pytest`で実行する。
+- Apply `pyarrow.parquet.ParquetFile(path).metadata.num_rows > 0` to all 3 files in the preflight verify; assert explicitly.
+- Define an expected-months set `202201..202605` and diff against present partitions; fail if > N months missing.
+- In addition to `actual_scraped_max`, assert `dmax >= '2026-01-01'` (or document an explicit tolerance for boundary incompleteness).
+- Extend the PK-set union equality block to entry and result tables, not just race.
 
-**Risk Assessment**
-
-**HIGH**。前提データが未取得で現在は実行不能です。さらに、現状の完了判定では不完全なcorpusをDATA-05達成済みと誤認する余地があります。
-
-> **Orchestrator verification (06-03):** The "graded_stakes 780–880 post-integration" claim is internally inconsistent with Plan 06-01's Kaggle-only ~838 target: scraping adds 2022–2026 graded races, so the unified count must exceed 838. This compounds the Plan 06-01 GRADE_REGEX defect (if graded flags are near-zero on the Kaggle side after D-01, the unified count is dominated by scraped graded races and could be anywhere).
+**Risk Assessment: HIGH.** odds/payoff SHA-256 and per-period graded counts are genuinely fixed. But the preflight does not actually enforce entry/result non-emptiness, the date-range ceiling accepts incomplete scrapes, and the PK-set union check is race-only.
 
 ---
 
 ## Consensus Summary
 
-Single-reviewer cycle — consensus is Codex's view, with orchestrator-side code verification backing the four load-bearing HIGH claims.
+Single-reviewer cycle (Codex / gpt-5.5). The orchestrator independently verified each of
+Codex's load-bearing claims against the working tree — all corroborated (see inline
+"Orchestrator verification" notes in the Concerns sections). No divergent views.
 
-### Agreed Strengths (Codex)
+### Resolved cycle-1 HIGHs (8 — counted out)
 
-- Correct sequencing: dtype/flag reconciliation at the producer (Kaggle) before the consumer (merge).
-- `SCHEMA_DTYPE_MAP` reused as the single dtype authority.
-- `_recast_to_canonical` raises on bad data instead of `errors='ignore'`.
-- Atomic write for Parquet reduces corruption risk.
-- `FLAG_COLUMNS` entry for `(国際)` correctly preserved (models CSV header, not the mapping).
-- `SCHEMA_BY_TABLE` 3-table allowlist protects the Phase 5 odds/payoff seed at the integration boundary.
-- Pre-dedup PK overlap raises loudly rather than silently dropping.
-- Per-row logging avoided (honors `scraper-logging-no-per-item.md`).
-- Hermetic tmp_path test fixtures for the fast-path tests.
-- Smoke-only corpus halt gate (Plan 06-03 Task 1) prevents a misleadingly tiny corpus.
+- **#4 poetry** — all commands `python -m` / `python -c`; setuptools backend confirmed.
+- **#5 non-idempotent integration** — separate `kaggle_input_dir`; idempotency test present.
+- **#7 autouse skip swallows hermetic** — two-class split; hermetic ungated.
+- **#8 FK test no-op** — orphan injection + `validate_integrity` + `ValueError` assertion.
+- **#9 reindex masks schema drift** — `_assert_column_set_equality` before reindex.
+- **#10 D-06 pre-task not done** — halt gate kept; prerequisite documented.
+- **#12 odds/payoff snapshot not in verify** — now in actual `<verify><automated>`.
+- **#13 graded 780-880 wrong** — per-period derivation comparison; no fixed band.
 
-### Agreed Concerns (highest priority — all HIGH)
+### Unresolved HIGHs (7 — carried into cycle 3)
 
-1. **[HIGH, 06-01] D-01 GRADE_REGEX gap.** The Kaggle converter has no `GRADE_REGEX`; deleting the `(国際)` mapping alone makes `race_flag_graded_stakes` False for nearly all Kaggle rows. The "~838 (780–880)" acceptance band is unreachable as written. A grade-detection function must be introduced on the Kaggle side or the target recomputed. *(Verified: `GRADE_REGEX` only in `src/scraper/flag_crosswalk.py:124`.)*
-2. **[HIGH, 06-01] D-05 violation via `convert()`.** `convert()` writes all 5 tables including `odds_trifecta`/`payoff`; Plan 06-01 Task 2 invoking it will overwrite the Phase 5 seed, contradicting D-05 and Plan 06-03's "unchanged" assertion. *(Verified: `kaggle_converter.py:107-117` `tables` dict.)*
-3. **[HIGH, 06-01] 8-point verification is not actually 8.** `run_all_validations` skips row-count / null-rate / distribution checks when `source_counts`/`source_stats` are None. The plan omits both, so ~3-4 of 8 checks are skipped, not passed. *(Verified: `validators.py:791,801,807,825`.)*
-4. **[HIGH, all] `poetry run` commands fail.** Repo uses setuptools; `poetry` is not installed. Every test/verification command in all three plans will fail at invocation. *(Verified: `which poetry` → not found; `pyproject.toml build-backend = setuptools.build_meta`.)*
-5. **[HIGH, 06-02] Non-idempotent integration.** `integrate_standard_layer` reads `standard/{table}.parquet` and writes the same path, so a second run re-merges already-merged Kaggle rows + scraped → all scraped PKs become duplicates → FAIL-LOUD aborts. Re-run after a partial failure or human-check is impossible.
-6. **[HIGH, 06-02] No corpus-level transactionality.** Per-file atomic write does not prevent a mixed-generation corpus if entry/result writes fail after race succeeds.
-7. **[HIGH, 06-02] autouse skip gate swallows hermetic tests.** The class-level autouse `_require_scraped_data` fixture will skip the hermetic fast-path tests too, contradicting the plan's "fast-path tests do not have the skip gate."
-8. **[HIGH, 06-02] Referential-integrity test is a no-op.** "Does not raise" on well-formed data passes even if FK validation is absent. The integration module also does not call any FK validator.
-9. **[HIGH, 06-02] `reindex()` silently masks schema drift.** `reindex` drops extra columns and adds missing ones as NA; success criterion #2 (schema identical) can pass spuriously. Needs an explicit column-set equality assert before reindex.
-10. **[HIGH, 06-03] D-06 pre-task not done.** Real corpus is `data/standard/scraped/202306` only (5 races). Plan 06-03 cannot complete until the full 2022–2026/5 scrape runs. *(Verified by Codex reading the tree.)*
-11. **[HIGH, 06-03] Month-count gate is weak.** ≥40 month dirs does not validate per-partition non-emptiness, 3-file presence, or correct date range. Empty/partial partitions pass.
-12. **[HIGH, 06-03] odds/payoff snapshot not in the run command.** The pre-integration snapshot step is described but not in the `verify.automated` command, so the "unchanged" proof is unenforceable.
-13. **[HIGH, 06-03] graded_stakes 780–880 post-integration is wrong.** Scraped 2022–2026 graded races must push the unified count above the Kaggle-only ~838; the band is internally inconsistent.
-14. **[HIGH, 06-03] Date-range check too weak.** `startswith("2024") or startswith("2026")` passes for a single-month corpus.
+1. **[06-01, #1 NOT RESOLVED] `_apply_grade_detection` call ordering + KeyError + OR-merge clobber.** Helper runs at line 248 but `race_flag_stakes`/`race_flag_listed` are added as `pd.NA` at 251-252 — helper either KeyErrors or its result is overwritten. Verified: `_UNMAPPED_RACE_FLAGS` at `kaggle_converter.py:39,42`; write at `:251-252`. Also `grade="GⅠ"` test value does not match `_GRADE_REGEX`.
+2. **[06-01, #2 NOT RESOLVED] `core_tables_subdir` does NOT protect odds/payoff.** Plan explicitly writes odds/payoff to root always; Phase 5 seed overwritten. SHA-256 test proves value-equality, not non-overwrite. Verified: plan action `06-01-PLAN.md:178`; existing `data/standard/{odds_trifecta,payoff}.parquet` present.
+3. **[06-01, #3 PARTIALLY RESOLVED] 8-point verification cannot pass against 3-table subdir.** `validate_referential_integrity` appends "Missing odds_trifecta/payoff.parquet" → `overall_pass=False`. Verified: `validators.py:377-383`.
+4. **[06-02, #6 PARTIALLY RESOLVED] 3 sequential `os.replace` not atomic; no rollback test.** Mid-swap failure leaves mixed-generation corpus. Mechanism present, enforcement absent.
+5. **[06-03, #11 NOT RESOLVED] preflight verify does not assert entry/result non-empty.** `n` computed but never asserted; exceptions swallowed. Verified: `06-03-PLAN.md:122-127`.
+6. **[06-03, #14 PARTIALLY RESOLVED] `actual_scraped_max` is self-referential.** Proves no data dropped, accepts incomplete scrape. Mechanism present, target reach not enforced.
+7. **[06-03, NEW HIGH] PK-set union verify is race-only.** Prose says per-table; verify checks only `race.parquet`. Entry/result PK drift undetected. Verified: `06-03-PLAN.md:261-271`.
 
 ### Divergent Views
 
-Single reviewer — no divergence. The orchestrator's independent code verification corroborates Codex on all four load-bearing HIGH claims (GRADE_REGEX, convert() overwrite, 8-point skip, poetry) rather than contradicting.
+Single reviewer — no divergence. Orchestrator source verification corroborates all
+load-bearing claims rather than contradicting.
 
-### Orchestrator note on cycle contract
+### Recommended next actions (for cycle-3 `/gsd-plan-phase 6 --reviews`)
 
-Of the 14 HIGH concerns above, all are newly raised in this cycle (cycle 1, no prior HIGHs). None are partially or fully resolved. The internal plan-checker's prior 3-blocker fixes (run_all_validations signature, atomic write, grep-gated verify) addressed *command-level* correctness but did not surface the four producer-side correctness defects above; the Codex review's repository access caught them.
+Priority order:
 
-### Recommended next actions (for `/gsd-plan-phase 6 --reviews`)
-
-Priority order for the replanner:
-
-1. **Introduce a Kaggle-side grade detector** (reuse `flag_crosswalk`'s `_GRADE_REGEX` against the race-symbol / race-name field) so D-01 actually yields a graded count near the claimed ~838, and recompute the unified-target band (Kaggle-graded + scraped-graded, not a fixed 780–880).
-2. **Prevent `convert()` from clobbering odds/payoff.** Either restrict the Kaggle regen to race/entry/result only, or snapshot+restore odds/payoff around the call (checksum assertion).
-3. **Make `run_all_validations` actually run 8 checks** by supplying `source_counts` and `source_stats` computed from the source CSVs before regeneration.
-4. **Replace every `poetry run …`** with `python -m pytest …` / `python -c …` (repo is setuptools).
-5. **Make `integrate_standard_layer` idempotent** by reading Kaggle rows from a stable, separate path (e.g. `data/standard/kaggle/{table}.parquet`) or a pre-merge snapshot dir, never from the output path.
-6. **Add corpus-level transactionality** (write all three to a tmp dir, validate, then swap).
-7. **Split test classes / use markers** so hermetic tests are not gated by the scraped-data autouse skip; replace the "does-not-raise" FK test with an actual `validate_integrity`-backed assertion that raises on orphan FKs.
-8. **Add column-set equality assert before `reindex`** to catch schema drift loudly.
-9. **Strengthen Plan 06-03 preflight**: per-partition 3-file presence, non-empty, valid date; PK-set union == output unique PK count; odds/payoff checksum pre+post in the actual `verify.automated` command.
-10. **Resolve the 2015–2024 vs 2015–2026/5 scope**: update ROADMAP/REQUIREMENTS or add an explicit period filter.
-11. **Resolve `race_date` dtype contract**: CONTEXT says datetime, code says string — pick one and align.
+1. **Fix `_apply_grade_detection` ordering.** Move the call AFTER the `_UNMAPPED_RACE_FLAGS` loop (so the 3 graded columns exist), OR have the helper defensively initialize them as nullable-boolean before OR-merging. Add a test that injects a row where `convert_flags_to_bool` already set `race_flag_stakes=True` and asserts it survives.
+2. **Stop `convert()` from writing odds/payoff when `core_tables_subdir` is set.** Exclude odds/payoff from the write loop entirely (the integration never reads them from the subdir anyway). The SHA-256 test then becomes a true non-overwrite proof.
+3. **Resolve the 3-table-vs-5-table validator mismatch.** Either write a dedicated 3-table validator, OR use the option-(b) symlink shim, OR pass `parquet_dir=Path('data/standard')` and accept that `run_all_validations` validates the OLD race/entry/result (documenting that Plan 06-02's integration is the real validation gate). Pick one and commit.
+4. **Make the corpus swap atomic.** Directory-level rename OR backup-and-restore of pre-swap files; add a test that injects a 2nd-`os.replace` failure and asserts the 3 output files match their pre-call SHA-256.
+5. **Implement the preflight entry/result non-empty check properly.** Use `pyarrow.parquet.ParquetFile(path).metadata.num_rows > 0` on all 3 files; assert explicitly.
+6. **Add a real date-ceiling floor.** `dmax >= '2026-01-01'` (or document an explicit tolerance for boundary incompleteness); keep `dmax == actual_scraped_max` as a "no data dropped" check in addition.
+7. **Extend PK-set union verify to entry and result.** Mirror the race block for the other two tables.
 
 ---
 
 ## CYCLE_SUMMARY
 
-CYCLE_SUMMARY: current_high=14
+CYCLE_SUMMARY: current_high=7
 
 ## Current HIGH Concerns
 
-- **[06-01] D-01 GRADE_REGEX gap** — Kaggle converter has no grade-detection path; deleting `(国際)` mapping collapses `graded_stakes` to near-zero, the 780–880 acceptance band is unreachable. Verified.
-- **[06-01] D-05 violation via `convert()`** — regenerating via `convert()` overwrites `odds_trifecta.parquet` and `payoff.parquet`, destroying the Phase 5 seed. Verified.
-- **[06-01] 8-point verification is ~4-5 checks** — `run_all_validations` skips row-count/null-rate/distribution when `source_counts`/`source_stats` are None; the plan omits both. Verified.
-- **[all] `poetry run` commands fail** — repo uses setuptools, `poetry` not installed; every test/verify command in all 3 plans will error at invocation. Verified.
-- **[06-02] Non-idempotent integration** — `integrate_standard_layer` reads and writes `standard/{table}.parquet`; second run double-merges Kaggle rows → all-scraped-PK-duplicate abort.
-- **[06-02] No corpus-level transactionality** — per-file atomic write leaves a mixed-generation corpus if entry/result fail after race succeeds.
-- **[06-02] autouse skip gate swallows hermetic tests** — class-level `_require_scraped_data` skips the fast-path tests the plan says should not be gated.
-- **[06-02] Referential-integrity test is a no-op** — "does not raise" on valid data passes without any FK validation in the integration module.
-- **[06-02] `reindex()` silently masks schema drift** — extra columns dropped, missing columns filled with NA; success criterion #2 can pass spuriously.
-- **[06-03] D-06 pre-task not done** — real corpus is `data/standard/scraped/202306` only (5 races); plan cannot complete until the full scrape runs. Verified by reviewer.
-- **[06-03] Month-count gate is weak** — ≥40 month dirs does not validate per-partition non-emptiness, 3-file presence, or date correctness.
-- **[06-03] odds/payoff snapshot not in run command** — the pre-integration snapshot is described but absent from `verify.automated`, so the "unchanged" proof is unenforceable.
-- **[06-03] graded_stakes 780–880 post-integration is wrong** — scraped 2022–2026 graded races push the unified count above the Kaggle-only ~838; internally inconsistent.
-- **[06-03] Date-range check too weak** — `startswith("2024") or startswith("2026")` passes for a single-month corpus.
+- **[06-01, #1 NOT RESOLVED] `_apply_grade_detection` call ordering** — helper runs at line 248 but `race_flag_stakes`/`race_flag_listed` are created as `pd.NA` at 251-252; helper KeyErrors or its OR-merge result is clobbered. Plus `grade="GⅠ"` test value does not match `_GRADE_REGEX`. Verified against `kaggle_converter.py:39,42,251-252` and `flag_crosswalk.py:124`.
+- **[06-01, #2 NOT RESOLVED] `core_tables_subdir` does not protect odds/payoff** — plan writes odds/payoff to root ALWAYS; Phase 5 seed overwritten on every `convert(core_tables_subdir='kaggle')`. SHA-256 test proves value-equality, not non-overwrite. Verified against plan action `06-01-PLAN.md:178`.
+- **[06-01, #3 PARTIALLY RESOLVED] 8-point verification cannot pass against 3-table subdir** — `validate_referential_integrity` appends "Missing odds_trifecta/payoff.parquet" → `overall_pass=False`. Verified against `validators.py:377-383`.
+- **[06-02, #6 PARTIALLY RESOLVED] 3 sequential `os.replace` not atomic; no rollback** — mid-swap failure leaves mixed-generation corpus; idempotency test does not cover transactionality.
+- **[06-03, #11 NOT RESOLVED] preflight verify does not assert entry/result non-empty** — `n` computed but never asserted; exceptions swallowed. Verified against `06-03-PLAN.md:122-127`.
+- **[06-03, #14 PARTIALLY RESOLVED] `actual_scraped_max` self-referential** — proves no data dropped during integration, but accepts an incomplete D-06 scrape as complete; missing years are warning-only.
+- **[06-03, NEW HIGH] PK-set union verify is race-only** — prose promises per-table; `<verify><automated>` checks only `race.parquet`; entry/result PK drift undetected. Verified against `06-03-PLAN.md:261-271`.
