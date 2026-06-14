@@ -418,16 +418,35 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> Dict:
 
     # Grade token from the race name (``東京優駿(GI)``). Use the same regex
     # as flag_crosswalk so classification is consistent.
+    #
+    # UAT-Test-3 (Rule 1 deviation): the bare ``race_name`` extracted from
+    # ``<title>`` (e.g. ``宝塚記念``) does NOT carry the GI/G1 token, so it
+    # cannot drive GRADE_REGEX inside ``derive_race_flags``. netkeiba pages
+    # carry the grade in a SECOND ``<h1>`` element
+    # (``<h1>第64回宝塚記念(GI)</h1>``); the first ``<h1>`` is the site logo.
+    # Harvest that grade-bearing text into ``grade_haystack`` so both the
+    # ``grade`` field and ``derive_race_flags`` see the GI token. This keeps
+    # true G1 detection working now that the ``(国際)`` -> graded mapping is
+    # gone from FLAG_CROSSWALK.
+    grade_haystack = race_name or ""
+    for h1 in soup.find_all("h1"):
+        h1_text = h1.get_text(strip=True)
+        if h1_text and _GRADE_TOKEN_RE.search(h1_text):
+            # Prefer the grade-bearing <h1> as the haystack source.
+            if h1_text not in grade_haystack:
+                grade_haystack = f"{grade_haystack} {h1_text}".strip()
+            break
     grade: Optional[str] = None
-    if race_name:
-        grade_token = _GRADE_TOKEN_RE.search(race_name)
+    if grade_haystack:
+        grade_token = _GRADE_TOKEN_RE.search(grade_haystack)
         if grade_token:
             grade = grade_token.group(1)
 
     # grade_revision: ``第N回`` in the race name (e.g. ``第89回東京優駿``).
+    # Search grade_haystack (covers the grade-bearing <h1> path too).
     grade_revision: Optional[str] = None
-    if race_name:
-        rev_match = _GRADE_REVISION_RE.search(race_name)
+    if grade_haystack:
+        rev_match = _GRADE_REVISION_RE.search(grade_haystack)
         if rev_match:
             grade_revision = rev_match.group(1)
 
@@ -443,7 +462,9 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> Dict:
             )
 
     # ----- race flags -----
-    flags = derive_race_flags(race_condition or "", race_name or "")
+    # Pass grade_haystack (not bare race_name) so GRADE_REGEX sees the GI token
+    # that lives in the grade-bearing <h1> (UAT-Test-3 Rule 1 deviation).
+    flags = derive_race_flags(race_condition or "", grade_haystack or "")
 
     # ----- race_number from race_id suffix -----
     race_number: Optional[int] = None

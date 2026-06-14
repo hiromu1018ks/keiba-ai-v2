@@ -121,11 +121,32 @@ class TestFlagCrosswalk:
         # mare_only is never set by the crosswalk (Kaggle-side compat).
         assert flags["race_flag_mare_only"] is None
 
-    def test_international_to_graded_stakes(self) -> None:
-        """HIGH #6 Kaggle-compat: ``(国際)`` -> ``race_flag_graded_stakes``."""
+    def test_international_does_not_set_graded_stakes(self) -> None:
+        """UAT-Test-3: ``(国際)`` is an international-designation marker, NOT a
+        graded-stakes marker. A non-graded international race must return
+        ``race_flag_graded_stakes=None``. True graded detection comes from
+        ``GRADE_REGEX`` (GI/GII/GIII/重賞/ＧＩ), not from the ``(国際)``
+        substring. The special_weight and handicap mappings are unaffected.
+        """
         flags = derive_race_flags("4歳以上オープン (国際)(特指)(ハンデ)")
-        assert flags["race_flag_graded_stakes"] is True
+        assert flags["race_flag_graded_stakes"] is None
         assert flags["race_flag_special_weight"] is True
+        assert flags["race_flag_handicap"] is True
+
+    def test_listed_international_not_graded(self) -> None:
+        """UAT-Test-3 regression guard: ヒヤシンスS (race_id 202405010809) is a
+        Listed / リステッド競走 (non-graded) that carries the ``(国際)``
+        international-designation marker. It MUST NOT set
+        ``race_flag_graded_stakes``; it MUST set ``race_flag_listed`` (via the
+        ``(L)`` token in the race name) and ``race_flag_handicap``. This is the
+        exact UAT-Test-3 failure case locked in as a regression test.
+        """
+        flags = derive_race_flags(
+            "サラ系4歳以上オープン (国際)(ハンデ)",
+            race_name="ヒヤシンスS(L)",
+        )
+        assert flags["race_flag_graded_stakes"] is None
+        assert flags["race_flag_listed"] is True
         assert flags["race_flag_handicap"] is True
 
     def test_grade_g1(self) -> None:
@@ -187,16 +208,29 @@ class TestFlagCrosswalk:
                 for k, v in KAGGLE_COLUMN_MAP.items()
                 if k.startswith("レース記号/")
             }
+            # UAT-Test-3: race_flag_graded_stakes intentionally NOT covered by
+            # FLAG_CROSSWALK on the scraper side — (国際) is an
+            # international-designation marker, not a graded marker. True
+            # graded detection comes from GRADE_REGEX inside derive_race_flags,
+            # not from FLAG_CROSSWALK. The Kaggle-side column_mapping.py line 68
+            # still maps レース記号/(国際) -> race_flag_graded_stakes; Phase 6
+            # (Data Integration) reconciles the two sides (either drop the
+            # Kaggle mapping too, or add a race_flag_international column on
+            # both). See flag_crosswalk.py docstring.
+            - {"race_flag_graded_stakes"}
         ),
     )
     def test_crosswalk_covers_all_kaggle_flag_targets(self, target: str) -> None:
         """CYCLE-2 #2 parametrized coverage guard.
 
-        For each of the 13 unique ``race_flag_*`` targets that
-        ``KAGGLE_COLUMN_MAP`` defines, assert that AT LEAST ONE entry in
-        ``FLAG_CROSSWALK`` produces that target. A missing target yields a
-        named failure (e.g. ``target='race_flag_colt_only'[FAIL]``) so the
-        gap is impossible to overlook.
+        For each of the 12 unique ``race_flag_*`` targets that
+        ``KAGGLE_COLUMN_MAP`` defines (excluding
+        ``race_flag_graded_stakes``, which is intentionally sourced from
+        ``GRADE_REGEX`` rather than ``FLAG_CROSSWALK`` per UAT-Test-3),
+        assert that AT LEAST ONE entry in ``FLAG_CROSSWALK`` produces that
+        target. A missing target yields a named failure (e.g.
+        ``target='race_flag_colt_only'[FAIL]``) so the gap is impossible to
+        overlook.
         """
         covered = {field_name for _pattern, field_name in FLAG_CROSSWALK}
         assert target in covered, (
