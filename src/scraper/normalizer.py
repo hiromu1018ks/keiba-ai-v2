@@ -65,6 +65,7 @@ promotion lands on a concrete type (bool/string), which is compatible.
 
 import datetime
 import os
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -305,19 +306,31 @@ def validate_integrity(
             violations.append(msg)
             logger.warning(msg)
 
-    # d. entry/result horse_race_id 1-to-1 (set equality)
-    entry_hids = set()
-    result_hids = set()
+    # d. entry/result horse_race_id 1-to-1 (multiset equality). WR-03: a plain
+    # set-equality check is insufficient -- if entry has 1 row with id "X" and
+    # result has 100 rows all "X", the sets are equal ({"X"} == {"X"}) and the
+    # check would pass despite the cardinality mismatch. Comparing Counters
+    # (multisets) naturally subsumes set equality AND per-table uniqueness.
+    entry_hids: Counter = Counter()
+    result_hids: Counter = Counter()
     if "horse_race_id" in entry_df.columns:
-        entry_hids = set(entry_df["horse_race_id"].dropna().tolist())
+        entry_hids = Counter(entry_df["horse_race_id"].dropna().tolist())
     if "horse_race_id" in result_df.columns:
-        result_hids = set(result_df["horse_race_id"].dropna().tolist())
+        result_hids = Counter(result_df["horse_race_id"].dropna().tolist())
     if entry_hids != result_hids:
-        only_entry = entry_hids - result_hids
-        only_result = result_hids - entry_hids
+        only_entry = entry_hids - result_hids  # keys present in entry but not result
+        only_result = result_hids - entry_hids  # keys present in result but not entry
+        # Keys present in both but with DIFFERENT counts (cardinality mismatch).
+        common_keys = set(entry_hids.keys()) & set(result_hids.keys())
+        count_mismatch = {
+            k: (entry_hids[k], result_hids[k])
+            for k in common_keys
+            if entry_hids[k] != result_hids[k]
+        }
         msg = (
             "horse_race_id mismatch: entry/result are not 1-to-1 "
-            f"(only-in-entry={len(only_entry)}, only-in-result={len(only_result)})"
+            f"(only-in-entry={len(only_entry)}, only-in-result={len(only_result)}"
+            f", count-mismatch={count_mismatch})"
         )
         violations.append(msg)
         logger.warning(msg)

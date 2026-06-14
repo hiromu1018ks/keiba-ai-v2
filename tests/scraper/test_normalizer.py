@@ -505,6 +505,24 @@ class TestIntegrityValidation:
         joined = " | ".join(violations)
         assert "horse_race_id mismatch" in joined
 
+    def test_detects_entry_result_cardinality_mismatch(self) -> None:
+        """WR-03 -- same SET of horse_race_ids but different COUNTS is a
+        violation. Entry has 1 row with id "X"; result has 100 rows all "X".
+        The sets are equal ({"X"} == {"X"}) so the old set-equality check
+        passed -- but the 1-to-1 cardinality contract is broken. The
+        multiset (Counter) comparison correctly detects this."""
+        race_df = pd.DataFrame({"race_id": ["A"], "obstacle": [None]})
+        entry_df = pd.DataFrame({"horse_race_id": ["X"], "race_id": ["A"]})
+        result_df = pd.DataFrame({
+            "horse_race_id": ["X"] * 100,
+            "race_id": ["A"] * 100,
+        })
+        violations = validate_integrity(race_df, entry_df, result_df)
+        joined = " | ".join(violations)
+        assert "horse_race_id mismatch" in joined
+        # The cardinality mismatch is surfaced in the count-mismatch diagnostic.
+        assert "count-mismatch" in joined
+
     def test_detects_orphan_fk(self) -> None:
         """Entry race_id not in race_df triggers an orphan FK violation."""
         race_df = pd.DataFrame({"race_id": ["A"], "obstacle": [None]})
