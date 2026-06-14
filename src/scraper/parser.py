@@ -478,8 +478,36 @@ def _parse_race_header(soup: BeautifulSoup, race_id: str) -> Dict:
             )
 
     # ----- race flags -----
-    # Pass grade_haystack (not bare race_name) so GRADE_REGEX sees the GI token
-    # that lives in the grade-bearing <h1> (UAT-Test-3 Rule 1 deviation).
+    # WR-04 (Phase 04 review): ``grade_haystack`` (race_name + the
+    # grade-bearing <h1> text) is passed as the ``race_name`` argument to
+    # ``derive_race_flags`` rather than the bare ``race_name``. This
+    # concatenation is INTENTIONAL and load-bearing, not a copy-paste error:
+    #
+    #   * ``_GRADE_REGEX`` inside ``derive_race_flags`` must see the GI token
+    #     to set ``race_flag_graded_stakes``. The bare ``race_name`` extracted
+    #     from ``<title>`` (e.g. ``宝塚記念``) does NOT carry the GI token --
+    #     only the second ``<h1>`` (``第64回宝塚記念(GI)``) does. Passing bare
+    #     ``race_name`` would silently break graded detection on every G1/G2/G3
+    #     fixture (verified: ``derive_race_flags('... (国際)(指)(定量)',
+    #     '宝塚記念')`` returns ``graded_stakes=None``). This is the exact
+    #     UAT-Test-3 regression the existing tests guard against.
+    #
+    #   * The latent concern is that ``FLAG_CROSSWALK`` substring matching
+    #     (``(ハンデ)``, ``(定量)``, ``(牝)`` ...) also scans the h1 text. In
+    #     practice netkeiba's race-title <h1> never contains these
+    #     condition-text markers (they live in the ``smalltxt`` condition
+    #     string, already in the ``race_condition`` arg), so the leakage is
+    #     theoretical. If a future layout change puts condition markers in the
+    #     <h1>, the fix is to split ``derive_race_flags`` into separate
+    #     ``derive_substring_flags`` / ``derive_grade_flags`` calls; that
+    #     refactor is deferred until a concrete trigger appears, per the
+    #     review's "smallest change that doesn't break UAT-Test-3" guidance.
+    #
+    # Concern #1 from the review (harvesting the FIRST grade-bearing <h1>
+    # could pick a sidebar "next race" preview) is bounded by the break-on-
+    # first-match loop above: netkeiba pages have exactly two <h1> elements
+    # (logo + race title) on all 5 golden fixtures, and the logo <h1> does
+    # not match ``_GRADE_TOKEN_RE``.
     flags = derive_race_flags(race_condition or "", grade_haystack or "")
 
     # ----- race_number from race_id suffix -----
