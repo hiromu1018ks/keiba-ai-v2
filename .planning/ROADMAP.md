@@ -189,20 +189,20 @@ Plans:
   2. Schema is identical across the full date range (Kaggle-origin and scraped-origin rows are indistinguishable in the standard layer)
   3. Row counts and date coverage can be verified: the combined dataset spans 2015-01-01 through 2024-12-31 with expected volume
 
-**Plans**: 3 plans
+**Plans**: 3 plans (revised under --reviews to address 14 HIGH cross-AI concerns — Kaggle-side grade detector, idempotent transactional integration, per-partition preflight, SHA-256 odds/payoff protection)
 
 Plans:
 **Wave 1**
 
-- [ ] 06-01: D-01 `(国際)` mapping removal + D-02 Kaggle Parquet nullable-dtype regen + Phase 2 re-verification (DATA-05)
+- [ ] 06-01: D-01 `(国際)` removal + Kaggle-side grade detector (derive_race_flags) + D-02 nullable-dtype regen + odds/payoff snapshot-protected + 8-point verification with source_counts/stats (DATA-05)
 
 **Wave 2** *(blocked on 06-01)*
 
-- [ ] 06-02: src/pipeline/integration.py + tests/pipeline/test_integration.py (8 DATA-05 tests) (DATA-05)
+- [ ] 06-02: src/pipeline/integration.py (idempotent via separate kaggle_input_dir, corpus-level tmp-swap, column-set equality assert, validate_integrity-backed FK test, audit_leakage called) + tests/pipeline/test_integration.py (9 tests across TestIntegrationHermetic ungated + TestUnifiedCorpus gated) (DATA-05)
 
 **Wave 3** *(blocked on 06-01, 06-02)*
 
-- [ ] 06-03: Invoke integrate_standard_layer() on real corpus + verify 3 success criteria + human inspection gate (DATA-05)
+- [ ] 06-03: Per-partition preflight + invoke integrate_standard_layer() + odds/payoff SHA-256 in verify.automated + per-period graded counts + robust date-range/per-year assertions + human inspection gate (DATA-05)
 
 ### Phase 7: Model A -- Top-3 Probability
 
