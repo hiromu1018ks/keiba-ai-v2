@@ -177,13 +177,11 @@ def parse_race_day_html(html: str, race_day_date: datetime.date) -> list[RaceRef
             continue
         # JRA-only filter (CLAUDE.md): drop NAR (地方競馬) races by place code
         # (race_id[4:6]) before they reach the fetcher. race_id is guaranteed
-        # 12 digits here (fullmatch above), so the slice is safe. DEBUG (not
-        # WARNING): NAR races are expected on netkeiba day pages, not anomalous.
+        # 12 digits here (fullmatch above), so the slice is safe. Dropped
+        # SILENTLY -- NAR is ~half of all races netkeiba lists, so a per-race
+        # log would flood; the tqdm Enumerating/Scraping totals already reflect
+        # the JRA-only count.
         if race_id[4:6] not in _JRA_PLACE_CODES:
-            logger.debug(
-                f"Dropping non-JRA race_id {race_id!r} "
-                f"(place_code={race_id[4:6]} outside JRA 01-10)"
-            )
             continue
         if race_id in seen_ids:
             continue
