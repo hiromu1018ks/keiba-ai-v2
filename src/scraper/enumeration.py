@@ -100,7 +100,14 @@ def parse_calendar_month_html(html: str) -> list[tuple[str, datetime.date]]:
             continue
         # Cycle-2 #1: absolutize the relative href before yielding. urljoin
         # resolves /race/list/... against BASE_URL -> https://db.netkeiba.com/...
-        day_url = urljoin(BASE_URL, href)
+        # WR-05: normalize the trailing slash BEFORE dedup so that the same
+        # calendar day emitted in both forms (``/race/list/20220105/`` and
+        # ``/race/list/20220105``) collapses to a single URL. Without this,
+        # urljoin is href-form-preserving and the day would be fetched twice
+        # (a wasteful double-fetch on a rate-limited scraper). Both forms
+        # resolve to the same netkeiba page, so canonicalizing on the
+        # trailing-slash form is safe.
+        day_url = urljoin(BASE_URL, href).rstrip("/") + "/"
         if day_url in seen_urls:
             continue
         seen_urls.add(day_url)

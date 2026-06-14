@@ -89,6 +89,21 @@ class TestParseCalendarMonthHtml:
         result = parse_calendar_month_html(html)
         assert len(result) == 1
 
+    def test_deduplicates_trailing_slash_variance(self) -> None:
+        """WR-05: the same day emitted in both forms (``/race/list/20220105/``
+        and ``/race/list/20220105``) collapses to a single URL. Without
+        trailing-slash normalization the day would be fetched twice -- a
+        wasteful double-fetch on a rate-limited scraper."""
+        html = (
+            '<a href="/race/list/20220105/">with slash</a>'
+            '<a href="/race/list/20220105">without slash</a>'
+        )
+        result = parse_calendar_month_html(html)
+        assert len(result) == 1, f"expected 1 (deduped), got {len(result)}"
+        # The canonical form carries a trailing slash.
+        day_url, _ = result[0]
+        assert day_url == "https://db.netkeiba.com/race/list/20220105/", day_url
+
     def test_rejects_long_digit_run_in_day_href(self) -> None:
         """CR-01: a >8-digit ``/race/list/{N}/`` href is DROPPED, not
         prefix-truncated. Previously ``_RACE_DAY_HREF_RE`` was unanchored and
