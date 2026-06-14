@@ -69,7 +69,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. Kaggle CSV files are read and converted to standard-layer Parquet with correct schema conformance (validated by Pydantic or schema checks)
-  2. The 2015-20121 date range is correctly filtered from the full Kaggle dataset (1986-2021), and output is single-file Parquet per table (per D-07)
+  2. The 2015-20221 date range is correctly filtered from the full Kaggle dataset (1986-2021), and output is single-file Parquet per table (per D-07)
   3. Row counts and key distributions in the output Parquet match expectations from the source CSV (no silent data loss)
 
 **Plans**: 3 plans
@@ -132,7 +132,7 @@ Plans:
   3. Duplicate page fetches are prevented: already-downloaded HTML is reused without re-requesting
   4. Rate limiting is enforced so the scraper does not trigger anti-bot blocks
 
-**Plans**: 6 plans (Cycle 2 reviews revision -- cycle-1 fixed 5 HIGHs (#1,#2,#3,#5,#10); cycle-2 resolves the remaining 8: #1 URL absolutization, #2 FLAG_CROSSWALK exhaustive, #3 strict dtype, #4 same-month merge-dedup, #5 full-chain e2e, #6 entry/result partition_map, #7 dtype-fidelity promotion rule, #8 fetch_with_retry wrapper)
+**Plans**: 8 plans (6 baseline + 2 gap-closure for UAT-Test-3 flag misclassification and UAT-Test-6 broken calendar URL)
 Plans:
 **Wave 1**
 
@@ -154,6 +154,11 @@ Plans:
 **Wave 5** *(blocked on 04-02, 04-03, 04-04, 04-05)*
 
 - [x] 04-06: Orchestrator + fixture-based end-to-end test + __init__ re-exports + ruff/mypy gate (SCRP-01, SCRP-02, SCRP-03, SCRP-05)
+
+**Wave 6 — Gap Closure** *(04-07 and 04-08 run in parallel; fix UAT-Test-3 and UAT-Test-6)*
+
+- [ ] 04-07: Remove (国際)->graded_stakes mapping (UAT-Test-3 flag misclassification fix) (SCRP-01, SCRP-03)
+- [ ] 04-08: Fix calendar URL from /race/calendar/ to /race/list/ + golden regression fixture (UAT-Test-6 blocker fix) (SCRP-01, SCRP-02)
 
 ### Phase 5: Trifecta Odds Scraping
 
@@ -258,7 +263,7 @@ Plans:
 **Requirements**: OUTP-01, OUTP-02, OUTP-03
 **Success Criteria** (what must be TRUE):
 
-  1. CLI provides subcommands for data conversion, model training, prediction, and backtesting (e.g., `keiba convert`, `keiba train`, `keiba predict`, `keiba backtest`)
+  1. CLI provides subcommands for data conversion, model training, prediction, and backtesting (e.g. `keiba convert`, `keiba train`, `keiba predict`, `keiba backtest`)
   2. Backtest results are output as CSV with all metrics (ROI, hit rate, drawdown) and per-race bet details
   3. Bet candidate predictions are output as CSV with race ID, combination, estimated probability, odds, and EV
 
@@ -279,8 +284,8 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 |-------|----------------|--------|-----------|
 | 1. Data Schema & Leak Audit | 5/5 | Complete    | 2026-06-11 |
 | 2. Kaggle Data Pipeline | 3/3 | Complete    | 2026-06-11 |
-| 3. Feature Engineering | 5/5 | Complete    | 2026-06-12 |
-| 4. Scraping Infrastructure & Race Data | 6/6 | Complete | 2026-06-14 |
+| 3. Feature Engineering | 5/5 | Complete | 2026-06-12 |
+| 4. Scraping Infrastructure & Race Data | 6/8 (+2 gap-closure planned) | Gap closure in progress | - |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 0/? | Not started | - |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
