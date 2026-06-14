@@ -36,6 +36,7 @@ def test_scrape_help_exits_zero(runner: CliRunner) -> None:
     assert "--start" in result.output
     assert "--end" in result.output
     assert "--max-races" in result.output
+    assert "--no-progress" in result.output
 
 
 def test_status_help_exits_zero(runner: CliRunner) -> None:
@@ -126,10 +127,34 @@ def test_scrape_calls_run_scrape_live_true(
     # Defaults come from the orchestrator's constants.
     assert captured["raw_dir"] == cli_mod.DEFAULT_RAW_DIR == Path("data/raw/netkeiba")
     assert captured["standard_dir"] == cli_mod.DEFAULT_STANDARD_DIR
+    # Default (no --no-progress) forwards progress=True.
+    assert captured["progress"] is True
     # Path-count echo per table.
     assert "race=2" in result.output
     assert "entry=1" in result.output
     assert "result=2" in result.output
+
+
+def test_scrape_no_progress_flag_forwards_false(
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_run_scrape(**kwargs: Any) -> dict[str, list[Path]]:
+        captured.update(kwargs)
+        return {"race": [], "entry": [], "result": []}
+
+    monkeypatch.setattr(cli_mod, "run_scrape", fake_run_scrape)
+
+    result = runner.invoke(
+        main,
+        ["scrape", "--start", "2022-01-01", "--end", "2022-01-02", "--no-progress"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["progress"] is False
+    assert captured["live"] is True
 
 
 def test_scrape_passes_max_races_and_dirs(

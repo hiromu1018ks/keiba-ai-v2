@@ -73,6 +73,7 @@ class TestRunScrape:
                 end_date=datetime.date(2023, 6, 25),
                 standard_dir=tmp_standard_dir,
                 live=True,
+                progress=False,
             )
 
             assert result == expected
@@ -125,6 +126,7 @@ class TestRunScrape:
                 start_date=datetime.date(2022, 12, 17),
                 end_date=datetime.date(2023, 6, 25),
                 live=True,
+                progress=False,
             )
 
             # Only the second race reaches parse + normalize.
@@ -153,6 +155,7 @@ class TestRunScrape:
                 start_date=datetime.date(2022, 12, 17),
                 end_date=datetime.date(2023, 6, 25),
                 live=True,
+                progress=False,
             )
 
             # Exactly ONE FetcherSession context-manager open (the with block).
@@ -166,6 +169,7 @@ class TestRunScrape:
                 end_date=datetime.date(2022, 1, 5),
                 live=False,
                 fetch_html=None,
+                progress=False,
             )
 
     def test_live_false_with_injected_fetch_html_runs_offline(
@@ -201,6 +205,7 @@ class TestRunScrape:
                 end_date=datetime.date(2023, 6, 25),
                 live=False,
                 fetch_html=_stub_transport,
+                progress=False,
             )
 
             # FetcherSession was NEVER entered in offline mode (no real browser).
@@ -214,3 +219,48 @@ class TestRunScrape:
             for call in mock_fetch.call_args_list:
                 assert call.kwargs.get("session") is None
                 assert call.kwargs.get("fetch_callable") is _stub_transport
+
+    def test_progress_flag_is_output_neutral(
+        self, two_race_refs: list[RaceRef], tmp_standard_dir: Path
+    ) -> None:
+        """progress=True vs progress=False must produce the SAME parsed list reaching
+        normalize_to_parquet (tqdm is a display-only layer; it does not change data)."""
+
+        def _run_and_capture(progress: bool) -> int:
+            with (
+                patch("src.scraper.orchestrator.FetcherSession") as mock_session_cls,
+                patch("src.scraper.orchestrator.enumerate_races") as mock_enum,
+                patch("src.scraper.orchestrator.fetch_race_html") as mock_fetch,
+                patch("src.scraper.orchestrator.parse_race_html") as mock_parse,
+                patch("src.scraper.orchestrator.normalize_to_parquet") as mock_norm,
+            ):
+                mock_session = MagicMock()
+                mock_session.__enter__.return_value = mock_session
+                mock_session_cls.return_value = mock_session
+                mock_enum.return_value = two_race_refs
+                mock_fetch.side_effect = [
+                    _FIXTURES / "202206050509.html",
+                    _FIXTURES / "202309030811.html",
+                ]
+                mock_parse.side_effect = [
+                    {"race": {"race_id": "202206050509"}, "entries": [], "results": []},
+                    {"race": {"race_id": "202309030811"}, "entries": [], "results": []},
+                ]
+                mock_norm.return_value = {"race": [], "entry": [], "result": []}
+
+                run_scrape(
+                    start_date=datetime.date(2022, 12, 17),
+                    end_date=datetime.date(2023, 6, 25),
+                    standard_dir=tmp_standard_dir,
+                    live=True,
+                    progress=progress,
+                )
+
+                mock_norm.assert_called_once()
+                norm_args = mock_norm.call_args
+                passed_list = (
+                    norm_args.args[0] if norm_args.args else norm_args.kwargs["parsed_races"]
+                )
+                return len(passed_list)
+
+        assert _run_and_capture(True) == _run_and_capture(False) == len(two_race_refs)

@@ -45,10 +45,12 @@ and ``tests/scraper/test_end_to_end.py``):
 """
 
 import datetime
+import sys
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 from loguru import logger
+from tqdm import tqdm
 
 from src.scraper.enumeration import enumerate_races
 from src.scraper.fetcher import FetcherSession, fetch_race_html, make_fetch_html_callable
@@ -68,6 +70,7 @@ def run_scrape(
     live: bool = False,
     max_races: Optional[int] = None,
     fetch_html: Optional[Callable[[str], Optional[str]]] = None,
+    progress: bool = True,
 ) -> dict[str, list[Path]]:
     """Run the full scraping pipeline over ``[start_date, end_date]``.
 
@@ -106,6 +109,10 @@ def run_scrape(
         ``enumerate_races`` but race fetching uses the real session. When
         ``None``, a real ``FetcherSession`` is opened in live mode and
         ``make_fetch_html_callable`` builds the enumeration transport.
+    progress : bool, default True
+        When True, wrap the race iteration with a tqdm bar on stderr. When
+        False, iterate the plain list (no tqdm) -- use for log-file
+        redirection / CI / tests.
 
     Returns
     -------
@@ -143,6 +150,7 @@ def run_scrape(
                 session=session,
                 fetch_callable=None,  # live path uses the real session
                 max_races=max_races,
+                progress=progress,
             )
     else:
         # Offline mode: the injected transport drives BOTH enumeration and
@@ -155,6 +163,7 @@ def run_scrape(
             session=None,
             fetch_callable=fetch_html,  # Cycle-3 #2: transport -> race fetch
             max_races=max_races,
+            progress=progress,
         )
 
     return normalize_to_parquet(parsed_races, standard_dir)
@@ -166,6 +175,7 @@ def _fetch_and_parse(
     session: Optional[FetcherSession],
     fetch_callable: Optional[Callable[[str], Optional[str]]],
     max_races: Optional[int],
+    progress: bool = True,
 ) -> list[dict]:
     """Fetch + parse each race. ``fetch_race_html`` None is skipped, others proceed.
 
@@ -184,6 +194,10 @@ def _fetch_and_parse(
         used.
     max_races : Optional[int]
         If set, truncate to this many races (smoke runs).
+    progress : bool, default True
+        When True, wrap the race iteration with a tqdm bar on stderr. When
+        False, iterate the plain list (no tqdm) -- use for log-file
+        redirection / CI / tests.
     """
     refs = race_refs if max_races is None else race_refs[:max_races]
     if max_races is not None and len(race_refs) > max_races:
@@ -192,8 +206,42 @@ def _fetch_and_parse(
             f"{len(race_refs)} enumerated races"
         )
 
+    # tqdm wraps the (already-truncated) refs list. ``total`` is the
+    # PRE-truncation count ``len(race_refs)`` so that when ``max_races``
+    # truncates, the bar visibly stops short and the ``smoke N/total``
+    # postfix explains why. tqdm writes to stderr (same stream loguru uses)
+    # and auto-hides when stderr is not a TTY (piped/captured), so existing
+    # tests stay output-neutral.
+    total = len(race_refs)
+    if progress:
+        postfix = (
+            f"smoke {max_races}/{len(race_refs)}"
+            if max_races is not None and len(race_refs) > max_races
+            else None
+        )
+        iterable: Iterable[RaceRef] = (
+            tqdm(
+                refs,
+                desc="Scraping",
+                unit="race",
+                total=total,
+                file=sys.stderr,
+                postfix=postfix,
+            )
+            if postfix is not None
+            else tqdm(
+                refs,
+                desc="Scraping",
+                unit="race",
+                total=total,
+                file=sys.stderr,
+            )
+        )
+    else:
+        iterable = refs
+
     parsed: list[dict] = []
-    for ref in refs:
+    for ref in iterable:
         # Cycle-3 #2: in the offline injected-transport branch, fetch_callable
         # is passed through to fetch_race_html so a race NOT already pre-saved
         # under raw_dir is fetched via the transport. A transport returning

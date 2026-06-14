@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=2,<3",
     "lightgbm>=4.6",
     "loguru>=0.7",
+    "tqdm>=4.66",
     "pyarrow>=14.0",
     "playwright>=1.49",
     "beautifulsoup4>=4.12",

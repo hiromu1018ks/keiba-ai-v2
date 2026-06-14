@@ -96,18 +96,27 @@ def main() -> None:
     show_default=True,
     help="Standard-layer output root.",
 )
+@click.option(
+    "--no-progress",
+    "no_progress",
+    is_flag=True,
+    default=False,
+    help="Disable the tqdm progress bar (for log-file redirection / CI).",
+)
 def scrape(
     start: datetime.date,
     end: datetime.date,
     max_races: Optional[int],
     raw_dir: Path,
     standard_dir: Path,
+    no_progress: bool,
 ) -> None:
     """Run the LIVE scraping pipeline over [start, end].
 
     Issues real HTTPS requests to netkeiba via Playwright. Progress logs stream
     to stderr. On completion the number of output Parquet paths written per
-    table (race/entry/result) is printed.
+    table (race/entry/result) is printed. Pass --no-progress to suppress the
+    tqdm bar for log files / CI.
     """
     result = run_scrape(
         start_date=start,
@@ -116,6 +125,7 @@ def scrape(
         standard_dir=standard_dir,
         live=True,
         max_races=max_races,
+        progress=not no_progress,
     )
     click.echo(
         "scrape complete -- written output path(s): "
