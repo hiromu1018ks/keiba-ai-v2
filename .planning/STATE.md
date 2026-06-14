@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 Phase: 5
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-14
+Last activity: 2026-06-14 - Completed quick task 260614-lw5: tqdm 進捗バーを run_scrape に追加
 
 Progress: [██████████] 100%
 
@@ -144,6 +144,7 @@ None yet.
 | Date | Slug | Summary |
 |------|------|---------|
 | 2026-06-14 | add-click-cli-wrapper-for-run-scrape-scr | click 8.x CLI (`keiba` console-script) wrapping `run_scrape` — `scrape` (live) + `status` (parquet aggregation) subcommands. Note: used `[project.scripts]` (PEP621/setuptools) not spec's `[tool.poetry.scripts]`. |
+| 2026-06-14 | tqdm-orchestrator-py-cli-py | tqdm 進捗バーを `run_scrape` に追加（`progress: bool = True`、`total=len(race_refs)` 切り詰め前、max_races truncate 時に `smoke N/total` postfix、`file=sys.stderr`）。`scrape` CLI に `--no-progress` フラグ追加（`progress=not no_progress` を伝達）。テスト: 既存呼び出しに `progress=False`、出力非依存テスト + フラグテスト追加。Commit 6714f87. |
 
 ## Session Continuity
 
