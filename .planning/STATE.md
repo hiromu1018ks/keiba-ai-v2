@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 plan 04-03 complete
-last_updated: "2026-06-14T01:13:53.636Z"
-last_activity: 2026-06-14 -- Plan 04-03 complete (Playwright fetcher: FetcherSession + atomic write + block detection + module-level fetch_with_retry wrapper + 29 tests)
+stopped_at: Phase 4 plan 04-05 complete
+last_updated: "2026-06-14T01:23:01.000Z"
+last_activity: 2026-06-14 -- Plan 04-05 complete (strict-typed normalizer: SCHEMA_DTYPE_MAP + _build_typed_dataframe + write_partitioned_parquet with merge-dedup + partition_map + 30 tests)
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 19
-  completed_plans: 17
-  percent: 89
+  completed_plans: 18
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 04 (scraping-infrastructure-race-data) — EXECUTING
-Plan: 4 of 6 done in phase 04 (04-01, 04-02, 04-03, 04-04 complete; 04-05 normalizer and 04-06 orchestrator pending)
-Status: Plan 04-03 complete; ready for 04-05 (normalizer, now unblocked — 04-03+04-04 both done)
-Last activity: 2026-06-14 -- Plan 04-03 complete (Playwright fetcher: FetcherSession + atomic write + block detection + module-level fetch_with_retry wrapper + 29 tests)
+Plan: 5 of 6 done in phase 04 (04-01, 04-02, 04-03, 04-04, 04-05 complete; 04-06 orchestrator pending)
+Status: Plan 04-05 complete; ready for 04-06 (orchestrator — final integration: FetcherSession + parser + normalizer + __init__ re-exports + end-to-end fixture test)
+Last activity: 2026-06-14 -- Plan 04-05 complete (strict-typed normalizer: SCHEMA_DTYPE_MAP + _build_typed_dataframe + write_partitioned_parquet with merge-dedup + partition_map + 30 tests)
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 95%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [█████████░] 89%
 | Phase 04 P02 | 197 | 2 tasks | 3 files |
 | Phase 04 P04 | 1500 | 4 tasks | 8 files |
 | Phase 04 P03 | 302 | 2 tasks | 2 files |
+| Phase 04 P05 | 352 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,12 @@ Recent decisions affecting current work:
 - [Phase 04]: Cycle-2 HIGH #8 resolved — module-level fetch_with_retry function exists alongside FetcherSession.fetch_with_retry method; verify import succeeds; wrapper docstring warns against loop usage (T-04-09b regression guard) — Plan 04-03 implements the Playwright fetcher. Decisions resolve Cycle-2 HIGH #8 (export contradiction), Cycle-3 #2 (offline transport routing), and confirm Cycle-1 MEDIUM mitigations (rate-limit-on-error, networkidle avoidance, finally cleanup, 12-digit validation).
 - [Phase 04]: Cycle-3 #2 resolved — fetch_race_html(race_ref, session=None, raw_dir, fetch_callable=None); when session None + fetch_callable provided, callable fetches HTML (offline mode); both None raises ValueError (not AttributeError); fetch_callable wins when both provided — Plan 04-03 implements the Playwright fetcher. Decisions resolve Cycle-2 HIGH #8 (export contradiction), Cycle-3 #2 (offline transport routing), and confirm Cycle-1 MEDIUM mitigations (rate-limit-on-error, networkidle avoidance, finally cleanup, 12-digit validation).
 - [Phase 04]: FetcherSession.wait_until default 'domcontentloaded' (NOT 'networkidle'); fetch() applies time.sleep(rate_limit_seconds) in finally block on BOTH success and error paths (Cycle-1 MEDIUM rate-limit-on-error); atomic write via temp + os.replace; mock chain for tests is sync_playwright().return_value.start.return_value — Plan 04-03 implements the Playwright fetcher. Decisions resolve Cycle-2 HIGH #8 (export contradiction), Cycle-3 #2 (offline transport routing), and confirm Cycle-1 MEDIUM mitigations (rate-limit-on-error, networkidle avoidance, finally cleanup, 12-digit validation).
+- [Phase 04 P05]: CYCLE-2 #3 resolved — SCHEMA_DTYPE_MAP uses nullable pandas Int64/Float64/boolean wherever Kaggle Parquet is nullable; _build_typed_dataframe does NOT use astype(errors=ignore) anywhere (genuine failures raise TypeError); finish_position is Int64 so None does not silently become float64.
+- [Phase 04 P05]: CYCLE-3 #1 resolved — corner_1..corner_4 -> Float64 (Kaggle double nullable=True; verified via pyarrow.parquet.read_schema). Cycle-2 Int64 choice was wrong: Int64 serializes to Arrow int64 (str(int64)!=str(double)) and would FAIL 04-06 physical-type equality test. Float64 serializes to Arrow double (str matches).
+- [Phase 04 P05]: CYCLE-2 #4 resolved — write_partitioned_parquet performs read-merge-dedup on primary_key (race_id/horse_race_id) BEFORE atomic replace; keep="last" so newer re-run wins; sentinel survives same-month re-run; duplicate PKs collapse to one.
+- [Phase 04 P05]: CYCLE-2 #6 resolved — EntrySchema/ResultSchema have NO race_date column; write_partitioned_parquet accepts partition_map (race_id->race_date) for entry/result tables; calling without partition_map raises KeyError mentioning "partition_map" (fail loud, not silent mis-partition); normalize_to_parquet builds partition_map from filtered race_df.
+- [Phase 04 P05]: CYCLE-1 MEDIUM — normalize_to_parquet does NOT call audit_leakage; popularity/win_odds are intentionally in entry table per D-06/D-03; leakage audit reserved for feature-layer generation.
+- [Phase 04 P05]: CYCLE-1 HIGH #7/#8 stay resolved — _build_typed_dataframe reindexes to Schema.model_fields (empty input -> typed zero-row DF with ALL columns); output is date-partitioned under data/standard/scraped/{YYYYMM}/ (no single-file overwrite pattern _scraped.parquet).
 
 ### Pending Todos
 
@@ -121,6 +128,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T01:13:53.632Z
-Stopped at: Phase 4 plan 04-03 complete
-Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-03-SUMMARY.md
+Last session: 2026-06-14T01:23:01.000Z
+Stopped at: Phase 4 plan 04-05 complete
+Resume file: .planning/phases/04-scraping-infrastructure-race-data/04-05-SUMMARY.md

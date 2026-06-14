@@ -149,7 +149,7 @@ Plans:
 
 **Wave 4** *(blocked on 04-03 and 04-04)*
 
-- [ ] 04-05: Strict typed normalizer + schema reindex + integrity validation + atomic partitioned Parquet (SCRP-01, SCRP-03)
+- [x] 04-05: Strict typed normalizer + schema reindex + integrity validation + atomic partitioned Parquet (SCRP-01, SCRP-03)
 
 **Wave 5** *(blocked on 04-02, 04-03, 04-04, 04-05)*
 
