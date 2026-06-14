@@ -1,44 +1,63 @@
 ---
 phase: 06-data-integration
 reviewers: [codex]
-reviewed_at: 2026-06-14T20:22:00+09:00
+reviewed_at: 2026-06-14T20:55:00+09:00
 plans_reviewed:
   - 06-01-PLAN.md
   - 06-02-PLAN.md
   - 06-03-PLAN.md
-cycle: 3
-prior_cycle_high: 7
+cycle: 4
+prior_cycle_high: 5
 ---
 
-# Cross-AI Plan Review — Phase 6 (Cycle 3 — FINAL convergence)
+# Cross-AI Plan Review — Phase 6 (Cycle 4 — FINAL convergence)
 
-Cycle-3 re-review. The three PLAN.md files were replanned under `--reviews` (git commit
-`8335e48`) to address the 7 HIGHs that remained unresolved after cycle 2. Codex
-(gpt-5.5 via `codex exec`) re-reviewed the revised plans with repository read access
-(workdir: `/Users/hart/develop/keiba-ai-v2`). The orchestrator then independently
+Cycle-4 re-review. The three PLAN.md files were replanned (git commits `c818eda` +
+`c1e26b9`) to address the 5 HIGHs that remained unresolved after cycle 3. Codex
+(gpt-5.5 via `codex exec`, codex-cli 0.139.0) re-reviewed the revised plans with
+repository read access (workdir: `/Users/hart/develop/keiba-ai-v2`, sandbox granted
+`disk-full-read-access` + `git-read-access`). The orchestrator then independently
 re-verified every load-bearing claim Codex raised against the working tree before
 recording the adjudication below.
 
-**Headline:** of the 7 cycle-2 HIGHs, **4 are FULLY RESOLVED** in cycle 3 (#1, #2, NEW
-PK-set union, and the cycle-2 bug portion of #11). **3 remain PARTIALLY RESOLVED** (#3
-8-point relocation, #6 transactionality, #14 self-referential max, plus the gate-strictness
-portion of #11). Codex raised **2 NEW HIGH defects** introduced by the cycle-3 replan:
+**Headline:** of the 5 cycle-3 HIGHs, **2 are FULLY RESOLVED** (#2 source_stats unified,
+#11 zero-tolerance gate), **1 is PARTIALLY RESOLVED** (#14 floor — improved to
+`'2026-01-01'` but does not honor D-07's month-level contract through 2026-05), and the
+2 cycle-3 NEW HIGHs (#06-02 mismatch-as-soft, #06-02 transactionality) have **correct
+mitigations but flawed regression tests** — the production code fix is sound, but the
+tests do not isolate the failure path they claim to prove. Net result: **3 HIGH remain
+unresolved** (trend 14 → 7 → 5 → 3, still decreasing).
 
-1. **06-02 NEW HIGH — `horse_race_id` 1-to-1 mismatch treated as SOFT (not raised).** The
-   plan's hard-violation filter is `if "duplicate" in v or "orphan" in v` (mirroring
-   `normalizer.py:744-756`). `validate_integrity` returns `"horse_race_id mismatch: ..."`
-   (`normalizer.py:331`), which contains NEITHER token, so a non-1-to-1 entry/result corpus
-   is written as a warning only. Orchestrator-verified.
-2. **06-03 NEW HIGH — `source_stats` is Kaggle-only but compared against the unified
-   (Kaggle + scraped) output.** `validate_distributions` (`validators.py:283-330`) uses
-   `tolerance=0.01` absolute; the unified distance/popularity mean differs from the
-   Kaggle-only mean by far more than 0.01, so `dist_pass=False`, `overall_pass=False`, and
-   the plan's `assert v['overall_pass'] is True` FAILS at runtime. Orchestrator-verified.
+Codex raised **3 NEW HIGH defects**:
 
-This means cycle 3 closes 4 of the 7 carried-over HIGHs but opens 2 new ones, leaving a
-net of 5 unresolved HIGHs. Since this is the FINAL convergence cycle, the remaining 5 are
-documented with the exact one-line fix each requires, so the next `--reviews` replan (or a
-targeted patch) can close them without another full review round.
+1. **06-02 NEW HIGH — `mismatch` regression test passes via the `duplicate` path.** The
+   proposed test data (entry 1 row "X", result 2 rows "X") triggers BOTH a `duplicate
+   horse_race_id` violation (`normalizer.py:301-307`) AND the `mismatch` violation
+   (`normalizer.py:320-336`). Because the hard-violation filter checks `"duplicate"`
+   first, removing `"mismatch"` from the token set would leave the test still passing
+   via `duplicate`. The mitigation itself (adding `"mismatch"` to the filter) is
+   CORRECT and will protect production — but the regression test does not prove the
+   `mismatch` token is what catches the 1-to-1-only case. Orchestrator-verified against
+   `normalizer.py:301-336`.
+2. **06-02 NEW HIGH — mid-swap monkeypatch fires during staging write, not swap.**
+   `_atomic_write_parquet` (`normalizer.py:643-653`) also calls `os.replace`, and
+   `normalizer.os` is the SAME module object as `integration.os` (both do `import os`).
+   The plan writes 3 staging files via `_atomic_write_parquet` BEFORE the 3-call swap
+   loop, so the 2nd `os.replace` call fires during the 2nd staging write — the test
+   never reaches the swap loop it claims to test. Orchestrator-verified against
+   `normalizer.py:643-653` and `06-02-PLAN.md:246-248`.
+3. **06-03 NEW HIGH — D-07 month-level completeness not guaranteed.** `EXPECTED_FLOOR =
+   '2026-01-01'` only proves the scrape reached into 2026, not that it reached 2026-05
+   per D-07's LOCKED scope "2022年1月〜2026年5月末" (`06-CONTEXT.md:45`). Separately,
+   the preflight gate `>= 40` partitions does not detect missing months between
+   2022-01 and 2026-05 (53 months expected; JRA runs year-round so there are no
+   legitimate off-months). Orchestrator-verified against `06-CONTEXT.md:45` and
+   `06-03-PLAN.md:100-172`.
+
+All 3 new HIGHs have one-line (or few-line) fixes. The convergence trend is monotonic
+(14 → 7 → 5 → 3), and the production-code mitigations are correct on the 2 cycle-3 NEW
+HIGHs — only the tests and the floor-strictness need patching. This is documented so a
+targeted cycle-5 patch (or in-execution fix) can close them without another full review.
 
 ---
 
@@ -48,34 +67,33 @@ targeted patch) can close them without another full review round.
 
 **Summary**
 
-Cycle-3のgrade検出順序、`G1` 正規表現マッチ、`race_condition=' '` によるearly-return
-bypass、odds/payoff完全非書き込みは、いずれも実ソース (`kaggle_converter.py:36-44,248,
-251-252` / `flag_crosswalk.py:124-130,184-185` / `kaggle_converter.py:103-119`) と整合
-している。#1 と #2 は genuine fix。ただし8項目検証の移動先 (06-03) に統計生成の欠陥が
-あるため、HIGH #3 はフェーズ全体としては部分解消となる（06-03 側の NEW HIGH 参照）。
+Cycle-4のgrade検出順序、`G1` 正規表現マッチ、`race_condition=' '` によるearly-return
+bypass、odds/payoff完全非書き込み、core_tables_subdirリダイレクトは、いずれも実ソース
+(`kaggle_converter.py:36-44,82-90,244-278` / `flag_crosswalk.py:124-130,184-185` /
+`normalizer.py:95-192,643-653`) と整合している。06-01はcycle-3の5件HIGHを直接解決する
+計画ではないが、06-02/06-03の前提としては十分。
 
-### Cycle-2 HIGH Adjudication (06-01)
+### Cycle-3 HIGH Adjudication (06-01)
 
-| # | Verdict | Orchestrator-Verified Evidence |
-|---|---------|--------------------------------|
-| #1 (grade detection ordering + KeyError + clobber) | **RESOLVED** | `_UNMAPPED_RACE_FLAGS` includes `race_flag_listed` and `race_flag_stakes` (`kaggle_converter.py:39,42` — verified). `convert_flags_to_bool` runs at `:248`; the unmapped-flags loop runs at `:251-252` (AFTER). Moving `_apply_grade_detection` to after the loop (or at end of `split_race_entry_result` before `:278`) means all 20 columns exist as nullable-boolean pd.NA Series when the helper reads `race_df[col]` — no KeyError, no later-clobber. The cycle-2 placement at `:248` would have KeyError'd; the cycle-3 placement does not. Test value `grade='G1'` matches `_GRADE_REGEX`'s `G3\|G2\|G1` (`flag_crosswalk.py:127`); the cycle-2 `GⅠ` (half-width G + full-width Ⅰ U+FF21) matched neither alternative — verified by reading the regex. `race_condition=' '` is truthy so `if not race_condition: return flags` (`:184-185`) does not fire, and the haystack `f"{race_condition} {race_name}"` is built so `_GRADE_REGEX` is applied to the name even when grade is null. |
-| #2 (odds/payoff overwrite) | **RESOLVED** | Current write site (`kaggle_converter.py:103-119`) builds ONE `tables` dict with all 5 tables and writes each to `standard_dir / f"{table}.parquet"` unconditionally — verified. The cycle-3 design splits this into `core_tables` (race/entry/result) and `odds_tables` (odds_trifecta/payoff), and gates the odds_tables write on `core_tables_subdir is None`. When subdir is set, odds/payoff are written to NEITHER root NOR subdir — they are not written at all. This directly removes the overwrite cause (cycle-2 only redirected race/entry/result; odds/payoff still went to root). The non-overwrite test (`test_convert_preserves_odds_payoff`) now proves sentinel bytes UNCHANGED, and `test_convert_skips_odds_payoff_when_subdir_set` proves odds/payoff absent from an empty tmp dir — both are genuine non-overwrite proofs, not value-equality. |
-| #3 (8-point verification vs 3-table subdir) | **PARTIALLY RESOLVED** | The 06-01-side fix is correct: `validate_integrity(race_df, entry_df, result_df)` (`normalizer.py:263`) takes DataFrames directly and does NOT assume odds/payoff — verified. 06-01-T3 now uses this for its 3-table FK check. The decision NOT to call `run_all_validations` against `data/standard/kaggle/` is also correct: `validate_referential_integrity` (`validators.py:377-383`) iterates `child_tables = ["entry", "result", "odds_trifecta", "payoff"]` and appends "Missing odds_trifecta.parquet"/"Missing payoff.parquet" when absent → `integrity_pass=False` → `overall_pass=False` — verified. HOWEVER the FULL 8-point `run_all_validations` was MOVED to 06-03-T2, and the relocated check has a NEW defect (see 06-03 NEW HIGH — source_stats Kaggle-only). So HIGH #3 is only RESOLVED at the 06-01 layer; the phase-level resolution depends on the 06-03 fix, which is itself broken. |
-| #4 (poetry) | **RESOLVED** (carried, KEPT) | All `<verify><automated>` use `python -m pytest` / `python -c`. |
+06-01はcycle-3の5件HIGHを直接解決を主張していない（それらは06-02/06-03側）。関連する前提は妥当:
+
+- `_UNMAPPED_RACE_FLAGS` に `race_flag_listed`/`race_flag_stakes` が含まれ、後から `pd.NA` で追加される (`kaggle_converter.py:36-44,250-252`)
+- `derive_race_flags()` は空文字で早期returnする (`flag_crosswalk.py:184-185`)
+- `G1` (半角) は `_GRADE_REGEX` の `G3|G2|G1` にマッチする (`flag_crosswalk.py:124-130`)
+- `race_date` の正規dtypeは `string` (`normalizer.py:99`)
 
 ### New Concerns (06-01)
 
-- **MEDIUM — OR-merge converts unknown→False on the 3 grade-derived columns.** `existing.fillna(False) | new.fillna(False)` (plan 06-01-PLAN.md:146) collapses `None` (unknown) to `False` (confirmed-absent) on `race_flag_graded_stakes`/`race_flag_stakes`/`race_flag_listed`. The `derive_race_flags` docstring (`flag_crosswalk.py:152-156`) explicitly distinguishes "unknown / not observed" (None) from "confirmed False". The cycle-2 WARNING-2 framing calls `fillna(False)` "load-bearing" to avoid `True | pd.NA = <NA>` downgrading True, but the side effect is that rows where neither the text-derived value nor the grade-derived value is True become False rather than None. Impact: only 3 of 20 columns; the deterministic count check at Task 3 uses `.fillna(False).sum()` so is consistent with this. Fix (optional): use a mask that only writes True (`race_df.loc[new.fillna(False), col] = True`) leaving other rows' existing values untouched.
-- **MEDIUM — Task 3 automated verify does not assert all dtypes.** The `done` block mentions `distance=int64`, `win_odds=double`, but the actual verify block (`06-01-PLAN.md:206`) only asserts null-free + race_flag_* bool + race_date string. `distance` int64 is checked; `win_odds` double is not. Minor coverage gap.
+- **MEDIUM — Task 3のdtype検証が記述どおりではない。** 計画本文 (`06-01-PLAN.md:236`) は `win_odds` が `double` であることも検証すると記述しているが、提示されたPython検証コード (`06-01-PLAN.md:266-276`) は `race` テーブルの `race_flag_*`/`race_date`/`distance` だけを確認し、`entry.win_odds`/`entry.horse_weight` を検証していない。Orchestrator-verified: verify.automatedブロックに `win_odds` assertionなし。
+- **LOW — subdir指定時もodds CSVを読み、変換する。** 現在の `convert()` 処理順ではodds抽出 (`kaggle_converter.py:96-101`) が書込み判定より前。非書込み要件には違反しないが、22MB CSVの不要な読込みと変換が発生する。
 
 ### Suggestions (06-01)
 
-- For the OR-merge, prefer a True-only mask to preserve the unknown→unknown semantics on the 3 columns.
-- Add `win_odds` double assertion to the Task 3 verify block for parity with the `done` list.
+- Task 3 verifyブロックに `entry.win_odds` (double), `entry.horse_weight` (double), `result.last_3f` のArrow dtype assertionを追加する。
+- `core_tables_subdir is not None` の場合はodds CSVの読込み・抽出自体をスキップする（性能改善、任意）。
 
-**Risk Assessment: MEDIUM.** #1 and #2 are genuine, code-grounded resolutions. The remaining
-risk on 06-01 is the 06-03-side #3 dependency (source_stats) and the minor OR-merge/dtype
-gaps.
+**Risk Assessment: LOW.** 実装の主要方針はコードに適合している。残件は検証範囲の拡充と
+性能上の最適化のみ。
 
 ---
 
@@ -83,35 +101,39 @@ gaps.
 
 **Summary**
 
-独立したKaggle入力パス (HIGH #5) と tempfile.mkdtemp staging + validate-before-swap は
-改善している。しかし3ファイルの逐次 `os.replace` は依然 corpus-atomic ではなく、さらに
-cycle-3 replan が `validate_integrity` の "horse_race_id mismatch" 違反を hard failure
-から外すという新しい重大欠陥を導入した。
+`mismatch` をハード違反へ追加する実装方針自体は正しい（`normalizer.py:330-334` の違反文字列に
+`mismatch`/`1-to-1` があり、`duplicate`/`orphan` はない）。validate-before-swap +
+idempotent recoveryモデルも妥当。しかし、その2つの回帰テストはどちらも意図した経路を証明
+できない。
 
-### Cycle-2 HIGH Adjudication (06-02)
+### Cycle-3 HIGH Adjudication (06-02)
 
 | # | Verdict | Orchestrator-Verified Evidence |
 |---|---------|--------------------------------|
-| #6 (corpus transactionality) | **PARTIALLY RESOLVED** | `_atomic_write_parquet` (`normalizer.py:643-653`) is per-file atomic (temp + single os.replace) — verified. Three sequential `os.replace` calls are NOT one corpus-atomic operation: a failure between the 2nd and 3rd leaves race=new + entry=new + result=old (or any partial combo). The plan acknowledges this and relies on "validate-before-swap + idempotent recovery" — which is an ACCURATE description (the plan does not falsely claim perfect atomicity, unlike cycle 2's implicit claim). The recovery guarantee is real BECAUSE integration reads from immutable inputs (`data/standard/kaggle/` + scraped partitions), so a re-run produces identical output. BUT the new test `test_integration_partial_swap_recoverable` deletes ONE output file post-run then re-invokes — it does NOT inject a failure DURING the swap loop (e.g. monkeypatch the 2nd os.replace to raise), so it does not prove recovery from the actual mixed-generation failure mode Codex flagged in cycle 2. The idempotency guarantee covers it in principle, but the test is weaker than the cycle-2 concern demanded. |
+| #6 (corpus transactionality) | **PARTIALLY RESOLVED** | Mitigation design (validate-before-swap via `tempfile.mkdtemp` staging + idempotent recovery) is CORRECT and the model is accurately described as NOT perfect atomicity. The 3 staging writes (`_atomic_write_parquet`, normalizer.py:643-653) + 3 swap `os.replace` calls is a real validate-before-swap flow. The recovery guarantee (reads only from immutable inputs `data/standard/kaggle/` + scraped partitions) is genuine. BUT the cycle-4 strengthened test does not prove recovery from a mid-SWAP failure — see NEW HIGH #2 below. |
 | #5 (idempotency) | **RESOLVED** (carried, KEPT) | Separate `kaggle_input_dir`; idempotency test present. |
 | #7 (autouse skip) | **RESOLVED** (carried, KEPT) | Two-class split. |
-| #8 (FK test) | **RESOLVED** (carried, KEPT) — but see NEW HIGH below | Orphan injection + `validate_integrity` + ValueError. |
+| #8 (FK orphan raises) | **RESOLVED** (carried, KEPT) | Orphan injection + `validate_integrity` + ValueError. |
+| #8b (horse_race_id mismatch RAISES) | **PARTIALLY RESOLVED** | The PRODUCTION-CODE mitigation is CORRECT: extending the hard-violation filter to `"duplicate" in v or "orphan" in v or "mismatch" in v or "1-to-1" in v` (`06-02-PLAN.md:230-240`) genuinely catches the `"horse_race_id mismatch: entry/result are not 1-to-1"` violation string (`normalizer.py:330-334`), because that string contains `"mismatch"` and `"1-to-1"` but NEITHER `"duplicate"` NOR `"orphan"`. Verified at `normalizer.py:330-336`. A structurally inconsistent entry/result corpus will now RAISE in production. HOWEVER the regression test `test_horse_race_id_mismatch_raises` does not isolate the `mismatch` path — see NEW HIGH #1 below. |
 | #9 (column-set equality) | **RESOLVED** (carried, KEPT) | `_assert_column_set_equality` before reindex. |
 
 ### New Concerns (06-02)
 
-- **HIGH — `horse_race_id` 1-to-1 mismatch between entry and result is treated as SOFT, not raised.** The plan's hard-violation filter (06-02-PLAN.md:215) is: "Treat any violation containing `"duplicate"` or `"orphan"` as hard — RAISE ValueError mirroring normalizer.py:744-756." `normalizer.py:744-756` itself uses `hard_violations = [v for v in violations if "duplicate" in v or "orphan" in v]` — verified. But `validate_integrity` returns the string `"horse_race_id mismatch: entry/result are not 1-to-1 ..."` for the entry/result cardinality check (`normalizer.py:331`) — verified. That string contains NEITHER "duplicate" NOR "orphan", so it is classified SOFT (warning only) and a corpus where entry and result are NOT 1-to-1 is written without raising. The normalizer's own source comment (lines 740-743) acknowledges this is a deliberate SOFT classification ("entry/result 1-to-1 cardinality mismatch detected after the per-table uniqueness checks remain warnings"), but the plan does not document this divergence, and the Phase 6 success criterion #1 ("no duplicate races") implicitly assumes entry/result integrity. Orchestrator-verified against `normalizer.py:309-336, 744-756` and `06-02-PLAN.md:215`.
-- **MEDIUM — Return type annotation is inaccurate.** `integrate_standard_layer(...) -> dict[str, Path]` but the plan returns `{"race": ..., "entry": ..., "result": ..., "audit": {...}}` where the audit value is a dict, not a Path. Should be `dict[str, Path | dict[str, list[str]]]` or a TypedDict/dataclass.
+- **HIGH — `mismatch` regression test passes via the `duplicate` path.** The proposed test data (`06-02-PLAN.md:182,254`) is entry 1 row with horse_race_id "X", result 2 rows BOTH with horse_race_id "X". With this data, `validate_integrity` returns violations containing BOTH: (a) `"duplicate horse_race_id: 1 duplicated rows in result table"` (from check (c) at `normalizer.py:301-307` — result has 2 rows with the same id, so `duplicated().sum() == 1`); AND (b) `"horse_race_id mismatch: entry/result are not 1-to-1 (..., count-mismatch={'X': (1, 2)})"` (from check (d) at `normalizer.py:320-336` — `Counter({"X":1}) != Counter({"X":2})`). Because the hard-violation filter iterates the violations list and checks `"duplicate"` first, the test PASSES even if `"mismatch"` were removed from the token set. The test does not prove the `"mismatch"` token is load-bearing for the 1-to-1-only case (where entry and result have DIFFERENT keys, not duplicates). Orchestrator-verified against `normalizer.py:293-336` and `06-02-PLAN.md:182,230-240`.
+- **HIGH — mid-swap monkeypatch fires during staging write, not swap.** The plan's swap design (`06-02-PLAN.md:246-248`) is: (1) write all 3 merged frames to staging via `_atomic_write_parquet(merged, staging_dir / f"{table}.parquet")` — 3 calls to `os.replace` (one per file, inside `_atomic_write_parquet` at `normalizer.py:653`); (2) validate staged files; (3) swap each into root via `os.replace(staging_dir / f"{table}.parquet", standard_dir / f"{table}.parquet")` — 3 more `os.replace` calls. `normalizer.py` does `import os` (`normalizer.py:67`) and the plan instructs `integration.py` to also `import os` — so `normalizer.os` and `integration.os` reference the SAME module object. The test's `monkeypatch.setattr(integration_mod.os, "replace", failing_replace)` (`06-02-PLAN.md:276`) patches that shared module, so the "2nd call" counter increments during the 2nd STAGING write (which happens before the swap loop). The test fires during staging, never reaches the swap loop, and does not prove recovery from a mid-SWAP failure — exactly the failure mode Codex flagged in cycle 2. Additionally, because a clean re-run from identical inputs produces byte-identical output, the assertion `post != canonical` is vacuously misleading (if the integration raised during staging, the canonical files were never overwritten, so `post == canonical`). Orchestrator-verified against `normalizer.py:67,643-653` and `06-02-PLAN.md:246-248,268-297`.
+- **MEDIUM — Return-type annotation inaccurate.** `integrate_standard_layer(...) -> dict[str, Path]` but the return includes `{"audit": {...}}` (a dict, not a Path). Should be `dict[str, Path | dict]` or a TypedDict. (Carried from cycle 3, not yet fixed.)
 
 ### Suggestions (06-02)
 
-- **One-line fix for the NEW HIGH:** change the hard-violation filter to also include `"mismatch"`, OR simply raise on ANY non-empty `validate_integrity` return: `if violations: raise ValueError(...)`. The latter is strictly safer and matches the Phase 6 success-criteria intent.
-- Add a test that monkeypatches the 2nd `os.replace` to raise and asserts the 3 output files match their pre-call SHA-256 (the genuine transactionality test the cycle-2 concern asked for).
-- Fix the return-type annotation or use a TypedDict.
+- **One-line fix for NEW HIGH #1:** change the `test_horse_race_id_mismatch_raises` test data so entry and result have DIFFERENT keys (no duplicates in either table) — e.g. entry has 1 row with horse_race_id "X", result has 1 row with horse_race_id "Y". Then `Counter(entry)={"X":1}` and `Counter(result)={"Y":1}`, so check (c) finds NO duplicates (passes), and check (d) returns ONLY the `"horse_race_id mismatch: entry/result are not 1-to-1 (only-in-entry=1, only-in-result=1, count-mismatch={})"` violation. BEFORE asserting `integrate_standard_layer` raises, assert `validate_integrity(...)` returns a list whose ONLY entry contains `"mismatch"` (proving the `mismatch` token is the load-bearing classifier).
+- **Few-line fix for NEW HIGH #2:** extract the swap loop into a dedicated function `_swap_staged_files(staging_dir, standard_dir)` that calls `os.replace` directly (not via `_atomic_write_parquet`), and patch ONLY that function (e.g. `monkeypatch.setattr("src.pipeline.integration._swap_staged_files", failing_swap)`), OR use a counter that skips the first N calls (where N = number of staging writes). Additionally, to make the mixed-generation observable, mutate an input between the clean run and the failing run (e.g. add a row to a scraped partition) so the "new generation" produces a different SHA-256 than the canonical — then the assertion `post != canonical` is meaningful.
+- Fix the return-type annotation (carried MEDIUM).
 
-**Risk Assessment: HIGH.** The `horse_race_id` mismatch-as-soft defect means a structurally
-inconsistent entry/result corpus can be written silently — exactly the kind of silent
-corruption the EV downstream (Phase 7/9) cannot tolerate.
+**Risk Assessment: HIGH.** Production-code mitigations are correct on both cycle-3 NEW HIGHs, but
+the two load-bearing regression tests do not prove what they claim. A structurally inconsistent
+entry/result corpus WILL now raise in production (the filter extension is genuine), but the test
+suite would pass even if the `"mismatch"` token were accidentally removed — a false sense of
+regression coverage. The mid-swap test fires at the wrong stage.
 
 ---
 
@@ -119,41 +141,48 @@ corruption the EV downstream (Phase 7/9) cannot tolerate.
 
 **Summary**
 
-PK-set union は実行ブロックで実際に3テーブルを反復しており、NEW HIGH (race-only) は
-genuine RESOLVED。しかし preflight は20%までの invalid partition を許容し、EXPECTED_FLOOR
-は要求期間（ROADMAP 2024年末 / D-07 2026年5月）を保証せず、さらに8項目検証に渡す
-`source_stats` が Kaggle-only であるため `validate_distributions` が統合出力に対して失敗する。
+unified source_stats (cycle-4) と ゼロ許容preflightは妥当で実行可能。一方、
+`EXPECTED_FLOOR='2026-01-01'` はD-07の「2026年5月末まで」を保証せず、preflightも
+月次完全性（欠落月検出）を行わない。結果として、完全でないD-06 corpusを受理できる。
 
-### Cycle-2 HIGH Adjudication (06-03)
+### Cycle-3 HIGH Adjudication (06-03)
 
 | # | Verdict | Orchestrator-Verified Evidence |
 |---|---------|--------------------------------|
-| #11 (entry/result non-empty) | **PARTIALLY RESOLVED** | The cycle-2 bug (swallowed exception via bare `except Exception: pass` + `n` computed but never asserted) IS genuinely fixed: the cycle-3 verify (`06-03-PLAN.md:144-151`) reads `pq.ParquetFile(p).metadata.num_rows`, asserts `> 0` by appending to `invalid` on failure, and re-raises on read error (`raise RuntimeError(...) from e`). Verified. HOWEVER the gate logic (`06-03-PLAN.md:168`: `if len(invalid) > len(dirs) * 0.2: sys.exit(1)`) tolerates up to 20% invalid partitions. With 40 partitions, up to 8 partition-table failures (e.g. 8 empty `entry.parquet` files, or 2 fully-empty partitions × 3 tables = 6 failures) pass the gate. So the contract "every present scraped partition ... non-emptiness for ALL THREE" (prose at `06-03-PLAN.md:16`) is NOT strictly enforced — a single empty `entry.parquet` in one partition (1 failure ≤ 8) passes. The cycle-2 defect (silent pass via swallowed exception) is resolved; the stricter reading ("all partitions non-empty") is not. |
-| #14 (self-referential max) | **PARTIALLY RESOLVED** | The cycle-3 addition `actual_scraped_max >= EXPECTED_FLOOR` where `EXPECTED_FLOOR = '2024-01-01'` (`06-03-PLAN.md:311-312`) catches a scrape stopping before 2024-01 — verified. This resolves the cycle-2 weakness for the pre-2024 case. BUT the floor is weaker than both upstream contracts: ROADMAP success criterion #3 (`ROADMAP.md:190`) says "2015-01-01 through 2024-12-31" (i.e. through end of 2024), and CONTEXT D-07 (`06-CONTEXT.md`) extends the target to 2026/5. A scrape that stopped at 2024-03-15 would pass `>= '2024-01-01'` but violate ROADMAP #3 (which requires through 2024-12-31) and D-07 (which targets 2026-05). The `dmax == actual_scraped_max` check (KEPT) still only proves no-data-dropped-during-integration. So the self-referential weakness is narrowed but not eliminated: the floor catches gross incompleteness (< 2024-01) but not partial-2024 or missing-2025/2026. |
-| NEW PK-set union (race-only) | **RESOLVED** | The verify block (`06-03-PLAN.md:319-330`) iterates `PK_BY_TABLE = {'race': 'race_id', 'entry': 'horse_race_id', 'result': 'horse_race_id'}` and for EACH table computes `set(output PKs) == set(union of Kaggle + all scraped partition PKs)`. Verified — the iteration is in the actual `<verify><automated>` block, not just prose. Entry and result PK drift is now caught. |
-| #3 (8-point relocation) | **PARTIALLY RESOLVED** | The relocation decision is correct: `run_all_validations` against `data/standard/` root (5 tables present) is the natural validation point, and `validate_referential_integrity` would fail against the 3-table kaggle/ subdir. BUT the relocated check has a NEW defect — see NEW HIGH below (source_stats Kaggle-only). |
+| #11 (preflight gate strictness) | **RESOLVED** | The cycle-4 gate `if len(invalid) > 0: sys.exit(1)` (`06-03-PLAN.md:168-170`) fails on ANY invalid partition (missing file, `num_rows == 0` in any of the 3 tables, or race_date mismatch). This correctly honors the prose contract "non-emptiness for ALL THREE". A single empty `entry.parquet` no longer passes. The cycle-3 silent-pass bug (swallowed exception + unasserted `n`) remains fixed (exceptions re-raised at `06-03-PLAN.md:148-149,157-158`). Verified at `06-03-PLAN.md:124-172`. NOTE: the gate validates PRESENT partitions only — it does not detect MISSING months (see NEW HIGH #3 below); that is a separate concern from the #11 gate-strictness defect, which is genuinely resolved. |
+| #14 (EXPECTED_FLOOR) | **PARTIALLY RESOLVED** | The cycle-4 floor `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) is a genuine improvement over cycle-3's `'2024-01-01'` — a scrape stopping at 2025-12 now FAILS. The triple assertion (`dmax == actual_scraped_max` AND `actual_scraped_max >= '2026-01-01'` AND `dmin in 2015-Q1`) is structurally correct. HOWEVER the floor does not honor the full D-07 contract (`06-CONTEXT.md:45`: "実データ全部（2015-2026/5）" / Phase 4 D-05 design "2022年1月〜2026年5月末"). A scrape reaching 2026-02 passes `>= '2026-01-01'` but violates D-07's "through 2026年5月末". Combined with the per-year `> 500 races` check (which passes if 2026 has > 500 races from Jan+Feb alone), a scrape stopping at 2026-02 can pass all gates. See NEW HIGH #3. |
+| #2 (source_stats Kaggle-only) | **RESOLVED** | The cycle-4 fix (`06-03-PLAN.md:200-207,268-298`) computes `source_stats` AND `source_counts` from the UNIFIED frames `urace = pd.concat([krace, srace])` / `uentry = pd.concat([kentry, sentry])` — the SAME Kaggle + scraped inputs that integration writes. Because `validate_distributions` (`validators.py:283-345`) reads `parquet_dir / f"{table}.parquet"` (the unified output) and compares min/max/mean with `tolerance=0.01` absolute, comparing identical-corpus stats passes within tolerance. Same for `validate_null_rates` (`validators.py:227-276`). `dist_pass = True`, `null_pass = True`, `overall_pass = True`. The cycle-3 runtime-FAIL defect is genuinely fixed. Orchestrator-verified against `validators.py:227-345,800-865` and `06-03-PLAN.md:268-298`. |
+| NEW PK-set union (race-only) | **RESOLVED** (carried, KEPT) | Verify block iterates all 3 tables; entry/result PK drift caught. |
+| #3 (8-point relocation) | **RESOLVED** | The FULL 8-point `run_all_validations` now runs here against `data/standard/` root (5 tables coexist) AND passes execution because source_stats is unified (cycle-4 fix to #2). The phase-level #3 resolution (which depended on #2 in cycle 3) is now complete. |
 | #15 (halt-on-smoke-only) | **RESOLVED** (carried, KEPT) | `< 40` partitions → exit 1. |
-| #16 (per-partition 3-file presence + race_date) | **RESOLVED** (carried, KEPT) — modulo the #11 20% tolerance note above. |
+| #16 (per-partition 3-file presence + race_date) | **RESOLVED** (carried, KEPT) | modulo the NEW HIGH #3 missing-month gap. |
 | #17 (odds/payoff SHA-256) | **RESOLVED** (carried, KEPT) | Pre/post SHA-256 + row count in verify.automated. |
 | #18 (per-period graded) | **RESOLVED** (carried, KEPT) | Per-period derive_race_flags comparison. |
 
 ### New Concerns (06-03)
 
-- **HIGH — `source_stats` is Kaggle-only but compared against the unified (Kaggle + scraped) output.** The verify block (`06-03-PLAN.md:274-280`) computes `source_stats` from `krace`/`kentry` — the Kaggle-only DataFrames produced by `split_race_entry_result(df)` after the 2015+ filter — for `race.distance` and `entry.popularity`. `source_counts` (`:266-273`) correctly adds Kaggle + scraped counts. But `validate_distributions` (`validators.py:283-330`) compares `source_stats[table].distributions[col]` against the ACTUAL parquet at `data/standard/{table}.parquet` (the unified Kaggle + scraped output) using `tolerance=0.01` absolute on min/max/mean — verified. The unified distance mean (2015-2026 races) differs from the Kaggle-only distance mean (2015-2021 races) by far more than 0.01 (different course distributions across eras), so `validate_distributions` flags mismatches → `dist_pass = all(len(mismatches) == 0 ...)` is False (`validators.py:855-858`) → `overall_pass = ... and dist_pass and ...` is False (`:862-865`) — verified. The plan's `assert v['overall_pass'] is True` (`06-03-PLAN.md:284`) therefore FAILS at runtime. Same logic applies to `validate_null_rates` (check 4) for `entry.popularity` null rate. This means the cycle-3 #3 relocation, while structurally correct, will not pass execution. Orchestrator-verified against `validators.py:283-330, 800-865` and `06-03-PLAN.md:274-284`.
-- **MEDIUM — per-year check skips missing years silently.** `if yr in per_year.index` (`06-03-PLAN.md:316`) means a fully-missing year (e.g. all of 2024 absent) is skipped, not failed. The plan says "assert each PRESENT year 2015..end has > 500 races" so this is intentional, but combined with the #14 floor weakness, a corpus missing 2024-06 through 2024-12 passes both the floor (`>= 2024-01-01`) and the per-year check (2024 present with H1 races > 500).
-- **MEDIUM — odds/payoff source_counts derived from the output files themselves.** `source_counts['odds_trifecta'] = pq.ParquetFile('data/standard/odds_trifecta.parquet').metadata.num_rows` (`06-03-PLAN.md:272`) reads the row count FROM the file being validated. The SHA-256 protection (#17) is genuine (proves non-overwrite), but as a row-count validation this is self-referential — it can only catch a row-count change between snapshot and validate, not a wrong row count vs an independent source. Acceptable given Phase 5 is the authoritative source for odds/payoff, but worth noting.
-- **MEDIUM — final verify does not directly assert `validate_integrity(race, entry, result) == []`.** The 8-point `run_all_validations` calls `validate_referential_integrity` (`validators.py:352-403`) which checks `race_id` FK only — it does NOT check entry/result `horse_race_id` 1-to-1. Combined with the 06-02 NEW HIGH (horse_race_id mismatch treated as soft), the unified corpus's entry/result 1-to-1 invariant is not enforced anywhere in the final gate.
+- **HIGH — D-07 month-level completeness not guaranteed (two sub-defects).** (a) Floor too weak: `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) only proves the scrape reached into calendar year 2026, not that it reached May 2026 per D-07's LOCKED scope (`06-CONTEXT.md:45`: "2022年1月〜2026年5月末"). A scrape stopping at 2026-02-28 passes the floor (`2026-02-28 >= 2026-01-01`) and the per-year `> 500 races` check (Jan+Feb 2026 JRA races easily exceed 500), yet violates D-07. (b) No missing-month detection: the preflight gate `if len(dirs) < 40` (`06-03-PLAN.md:134`) counts PRESENT partitions but does not verify WHICH months are present. From 2022-01 to 2026-05 is 53 months; if 13 months are entirely missing (e.g. all of 2024-Q3 + scattered months) but 40+ remain, the gate passes. JRA runs year-round (中央競馬 has meetings every month), so there are no legitimate off-months to tolerate. Orchestrator-verified against `06-CONTEXT.md:45`, `06-03-PLAN.md:100-172,314-339`, and the ROADMAP (Phase 4 D-05 design target 2022-01〜2026-05).
+- **MEDIUM — `validate_sample_rows` provides weak coverage for scraped-origin rows.** When a parquet row's key (race_id) is not found in the Kaggle CSV source, `validate_sample_rows` `continue`s and treats it as "filtered out, OK" (`validators.py:570-576`). Since scraped rows have race_ids absent from the Kaggle CSV, they are skipped rather than validated against a source. The 8-point `sample_rows` check therefore effectively validates only Kaggle-origin rows in the unified corpus. This is a coverage gap, not a correctness defect — the per-table PK-set union check (NEW HIGH cycle-3, RESOLVED) and the per-partition preflight already cover scraped integrity. Orchestrator-verified against `validators.py:565-576`.
 
 ### Suggestions (06-03)
 
-- **One-line fix for the NEW HIGH:** compute `source_stats` from the merged unified DataFrame (Kaggle + scraped concatenated), not from `krace`/`kentry` alone. OR pass `source_stats=None` (which makes checks 4 and 5 pass vacuously per `validators.py:779, 803-810, 851-860`) and rely on the 3-table-specific checks from 06-01-T3 + the per-period/per-year checks. The latter is simpler and the distributions check adds little value given the strong per-table PK/FK/schema checks already present.
-- Change the preflight gate to `if len(invalid) > 0: sys.exit(1)` (fail on ANY invalid partition) to match the "all partitions non-empty" prose, OR explicitly document the 20% tolerance as intentional.
-- Strengthen EXPECTED_FLOOR to `>= '2024-12-31'` (ROADMAP #3) or assert a specific target YYYYMM per D-07 (`'202605'` or last-known JRA month), with a documented tolerance for boundary incompleteness.
-- Add `assert validate_integrity(race_df, entry_df, result_df) == []` directly to the final verify (independent of the 06-02 raise logic) so the entry/result 1-to-1 invariant is enforced at the gate regardless of how 06-02 classifies it.
+- **One-line fix for NEW HIGH #3 (floor):** strengthen `EXPECTED_FLOOR` to require reaching at least May 2026: `EXPECTED_FLOOR = '2026-05-01'` (honors D-07's "2026年5月末" — a scrape stopping at 2026-04 fails). Optionally also assert the `202605` partition exists: `assert (Path('data/standard/scraped/202605') / 'race.parquet').exists()`. Document that D-07's exact last-race-day (e.g. last JRA meeting before 2026-06) is verified in Phase 9 backtest planning.
+- **Few-line fix for NEW HIGH #3 (missing months):** add an expected-months set check to the preflight:
+  ```python
+  expected = pd.period_range("2022-01", "2026-05", freq="M").strftime("%Y%m")
+  present = {d.name for d in dirs}
+  missing = sorted(set(expected) - present)
+  if missing:
+      print(f"BLOCKING: missing scraped months per D-07: {missing}"); sys.exit(1)
+  ```
+  (Drop the `>= 40` count gate, or keep it as a redundant sanity check below the strict set check.)
+- Optional: add a scraped-specific sample validation (compare a sample of scraped rows against the scraped raw HTML partition source) to close the `validate_sample_rows` MEDIUM.
 
-**Risk Assessment: HIGH.** The source_stats defect means the relocated 8-point check will
-FAIL at runtime — the cycle-3 #3 fix does not actually pass execution. The 20% preflight
-tolerance and the weak EXPECTED_FLOOR leave real coverage gaps.
+**Risk Assessment: HIGH.** source_stats unified and zero-tolerance gate are genuine resolutions,
+but the D-07 month-level completeness is not enforced — an incomplete scrape (stopping at 2026-02, or
+missing 13 scattered months) can pass all gates and produce a corpus that silently violates the
+LOCKED scope. Since D-07 is the contract that takes precedence over ROADMAP text, this is a real
+coverage gap the EV downstream (Phase 9 backtest over 2015-2026/5) depends on.
 
 ---
 
@@ -163,67 +192,54 @@ Single-reviewer cycle (Codex / gpt-5.5). The orchestrator independently verified
 load-bearing claim Codex raised against the working tree — all corroborated (see inline
 "Orchestrator-Verified Evidence" in each adjudication row). No divergent views.
 
-### Resolved cycle-2 HIGHs (4 — counted out)
+### Resolved cycle-3 HIGHs (2 — counted out)
 
-- **#1 grade detection ordering** — `_apply_grade_detection` moved after `_UNMAPPED_RACE_FLAGS` loop (no KeyError, no clobber); `grade='G1'` matches `_GRADE_REGEX`; `race_condition=' '` bypasses early-return.
-- **#2 odds/payoff overwrite** — `convert(core_tables_subdir='kaggle')` SKIPS odds/payoff writes entirely; non-overwrite test replaces value-equality.
-- **NEW PK-set union (race-only)** — verify block iterates all 3 tables (race/entry/result); entry/result PK drift now caught.
-- **#11 cycle-2 bug portion** — preflight now reads `num_rows` via pyarrow, asserts `> 0`, re-raises exceptions (the swallowed-exception + unasserted-n bug is fixed).
+- **#2 source_stats Kaggle-only** — `source_stats` AND `source_counts` now computed from UNIFIED `urace`/`uentry` (Kaggle + scraped combined); `validate_distributions`/`validate_null_rates` compare identical-corpus data → within tolerance → `overall_pass=True`. The cycle-3 runtime-FAIL is genuinely fixed.
+- **#11 preflight gate strictness** — `if len(invalid) > 0: sys.exit(1)` (zero-tolerance); exceptions re-raised; the cycle-2 silent-pass bug remains fixed.
 
-### Unresolved HIGHs (5 — carried forward)
+### Unresolved HIGHs (3 — carried forward)
 
-1. **[06-01, #3 PARTIALLY RESOLVED — depends on 06-03] 8-point relocation has a downstream defect.** The 06-01-side fix is correct, but the FULL 8-point check moved to 06-03-T2 will FAIL at runtime due to the source_stats issue (#5 below).
-2. **[06-02, #6 PARTIALLY RESOLVED] Transactionality test does not inject mid-swap failure.** Idempotent recovery is real in principle; the test deletes a file post-run rather than failing the swap loop, so it does not prove recovery from the actual mixed-generation failure mode.
-3. **[06-03, #11 PARTIALLY RESOLVED — gate strictness] 20% invalid-partition tolerance.** The cycle-2 silent-pass bug is fixed, but the gate tolerates up to 20% partition-table failures, so a single empty `entry.parquet` in one partition passes.
-4. **[06-03, #14 PARTIALLY RESOLVED — floor too weak] `EXPECTED_FLOOR = '2024-01-01'` does not match ROADMAP #3 (through 2024-12-31) or D-07 (through 2026/5).** A scrape stopping at 2024-03 passes the floor but violates both upstream contracts.
-5. **[06-03, NEW HIGH] `source_stats` Kaggle-only vs unified output → `validate_distributions` fails → `overall_pass=False` → assertion fails.** `source_stats` computed from `krace`/`kentry` (Kaggle-only); compared against unified parquet; tolerance 0.01 is far exceeded by the era difference.
-
-Plus 1 NEW HIGH from 06-02:
-
-6. **[06-02, NEW HIGH] `horse_race_id` 1-to-1 mismatch treated as SOFT (not raised).** The hard-violation filter `"duplicate" in v or "orphan" in v` misses `"horse_race_id mismatch"`; a non-1-to-1 entry/result corpus is written as a warning only.
+1. **[06-02, NEW HIGH] `mismatch` regression test passes via the `duplicate` path.** The proposed test data (entry 1 row "X", result 2 rows "X") triggers BOTH a `duplicate horse_race_id` violation (`normalizer.py:301-307`) AND the `mismatch` violation (`normalizer.py:320-336`). The hard-violation filter checks `"duplicate"` first, so the test passes even if `"mismatch"` were removed. The PRODUCTION-CODE mitigation (extending the filter with `"mismatch"`/`"1-to-1"`) is CORRECT and will protect the unified corpus — but the regression test does not prove the `"mismatch"` token is load-bearing. Orchestrator-verified against `normalizer.py:293-336` and `06-02-PLAN.md:182,230-240`.
+2. **[06-02, NEW HIGH] Mid-swap monkeypatch fires during staging write, not swap.** `_atomic_write_parquet` (`normalizer.py:643-653`) also calls `os.replace`, and `normalizer.os` == `integration.os` (same module object via `import os`). The plan writes 3 staging files via `_atomic_write_parquet` BEFORE the 3-call swap loop (`06-02-PLAN.md:246-248`), so the 2nd `os.replace` call fires during the 2nd staging write — the test never reaches the swap loop. Additionally, a clean re-run from identical inputs produces byte-identical output, so `post != canonical` is vacuously misleading. The validate-before-swap + idempotent recovery DESIGN is sound; the TEST does not prove it. Orchestrator-verified against `normalizer.py:67,643-653` and `06-02-PLAN.md:246-297`.
+3. **[06-03, NEW HIGH] D-07 month-level completeness not guaranteed (floor too weak + no missing-month detection).** (a) `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) only proves the scrape reached into 2026, not May 2026 per D-07 (`06-CONTEXT.md:45`: "2022年1月〜2026年5月末"). A scrape stopping at 2026-02 passes. (b) The preflight `>= 40` partitions (`06-03-PLAN.md:134`) counts PRESENT partitions but does not detect missing months between 2022-01 and 2026-05 (53 expected; JRA runs year-round so no legitimate off-months). Orchestrator-verified against `06-CONTEXT.md:45` and `06-03-PLAN.md:100-172,314-339`.
 
 ### Divergent Views
 
 Single reviewer — no divergence. Orchestrator source verification corroborates all
 load-bearing claims rather than contradicting.
 
-### Recommended next actions (targeted patches — no full re-review needed)
+### Recommended next actions (targeted patches — cycle 5)
 
-All 5 unresolved HIGHs have one-line fixes. They can be applied via a targeted patch commit
-rather than another full convergence cycle:
+All 3 unresolved HIGHs have one-line or few-line fixes. They can be applied via a targeted
+patch commit rather than another full convergence cycle:
 
-1. **06-02 horse_race_id mismatch (NEW HIGH):** change `06-02-PLAN.md:215` hard-violation
-   filter to `if violations: raise ValueError(...)` (raise on ANY non-empty return), OR add
-   `"mismatch"` to the token list. Add a test injecting an entry/result horse_race_id
-   cardinality mismatch and asserting ValueError.
-2. **06-03 source_stats Kaggle-only (NEW HIGH):** in `06-03-PLAN.md` STEP 3, either (a)
-   compute `source_stats` from `pd.concat([krace, scraped_race_df])` (the merged unified
-   frame) instead of `krace`/`kentry` alone, OR (b) pass `source_stats=None` (checks 4 and
-   5 pass vacuously; the strong per-table PK/FK/schema checks remain). Option (b) is simpler.
-3. **06-03 EXPECTED_FLOOR (carried #14):** change `EXPECTED_FLOOR = '2024-01-01'` to
-   `EXPECTED_FLOOR = '2024-12-31'` (ROADMAP #3) and document the D-07 2026-05 stretch goal
-   as a separate WARNING-level check (not a hard fail, since the scrape may legitimately be
-   in progress).
-4. **06-03 preflight tolerance (carried #11):** change `if len(invalid) > len(dirs) * 0.2`
-   to `if len(invalid) > 0`, OR explicitly document the 20% tolerance as intentional with
-   rationale.
-5. **06-02 transactionality test (carried #6):** add a test that monkeypatches the 2nd
-   `os.replace` to raise `OSError`, then asserts the 3 output files match their pre-call
-   SHA-256 (genuine mid-swap failure injection).
+1. **06-02 `mismatch` test isolation (NEW HIGH #1):** change `test_horse_race_id_mismatch_raises`
+   test data to entry 1 row "X", result 1 row "Y" (different keys, no duplicates in either
+   table). Then `validate_integrity` returns ONLY the `mismatch` violation (check (c) finds no
+   duplicates). BEFORE asserting `integrate_standard_layer` raises, assert `validate_integrity(...)`
+   returns a list whose ONLY entry contains `"mismatch"` (proving the token is load-bearing).
+2. **06-02 mid-swap test isolation (NEW HIGH #2):** extract the swap loop into a dedicated
+   function `_swap_staged_files(staging_dir, standard_dir)` and patch ONLY that function (so the
+   counter applies to swap calls, not staging writes). Alternatively, skip the first N calls where
+   N = number of staging writes. To make the mixed-generation observable, mutate an input between
+   the clean run and the failing run (add a row to a scraped partition) so the new generation
+   produces a different SHA-256 than canonical — then `post != canonical` is meaningful.
+3. **06-03 D-07 floor + missing months (NEW HIGH #3):** (a) change `EXPECTED_FLOOR = '2026-01-01'`
+   to `EXPECTED_FLOOR = '2026-05-01'` and optionally assert the `202605` partition exists; (b) add
+   an expected-months set check to the preflight: `expected = pd.period_range("2022-01", "2026-05",
+   freq="M").strftime("%Y%m"); missing = sorted(set(expected) - {d.name for d in dirs}); assert not
+   missing`.
 
-After these 5 patches, the phase should reach 0 HIGHs.
+After these 3 patches, the phase should reach 0 HIGHs.
 
 ---
 
 ## CYCLE_SUMMARY
 
-CYCLE_SUMMARY: current_high=5
+CYCLE_SUMMARY: current_high=3
 
 ## Current HIGH Concerns
 
-- **[06-02, NEW HIGH] `horse_race_id` 1-to-1 mismatch treated as SOFT (not raised)** — the plan's hard-violation filter (`"duplicate" in v or "orphan" in v`, mirroring `normalizer.py:744-756`) misses the `"horse_race_id mismatch"` violation string (`normalizer.py:331`); a non-1-to-1 entry/result corpus is written as a warning only. Orchestrator-verified against `normalizer.py:309-336, 744-756` and `06-02-PLAN.md:215`.
-- **[06-03, NEW HIGH] `source_stats` Kaggle-only vs unified output → `validate_distributions` fails → `overall_pass=False`** — `source_stats` is computed from `krace`/`kentry` (Kaggle-only) but compared against the unified (Kaggle + scraped) parquet with `tolerance=0.01`; the era difference in distance/popularity means exceeds tolerance, so the relocated 8-point check FAILS at runtime. Orchestrator-verified against `validators.py:283-330, 800-865` and `06-03-PLAN.md:274-284`.
-- **[06-01/06-03, #3 PARTIALLY RESOLVED] 8-point relocation depends on the 06-03 source_stats fix** — the 06-01-side 3-table validation is correct, but the FULL 8-point check moved to 06-03-T2 will not pass execution until the source_stats NEW HIGH above is fixed.
-- **[06-02, #6 PARTIALLY RESOLVED] Transactionality test does not inject mid-swap failure** — idempotent recovery is real in principle (reads from immutable inputs), but `test_integration_partial_swap_recoverable` deletes a file post-run rather than failing the 2nd `os.replace`, so it does not prove recovery from the actual mixed-generation failure mode Codex flagged in cycle 2.
-- **[06-03, #11 PARTIALLY RESOLVED — gate strictness] 20% invalid-partition tolerance** — the cycle-2 silent-pass bug (swallowed exception + unasserted `n`) IS fixed, but the gate `if len(invalid) > len(dirs) * 0.2` tolerates up to 20% partition-table failures, so a single empty `entry.parquet` in one partition passes. Orchestrator-verified against `06-03-PLAN.md:168`.
-- **[06-03, #14 PARTIALLY RESOLVED — floor too weak] `EXPECTED_FLOOR = '2024-01-01'` does not match ROADMAP #3 (through 2024-12-31) or D-07 (through 2026/5)** — a scrape stopping at 2024-03 passes the floor but violates both upstream contracts. Orchestrator-verified against `ROADMAP.md:190` and `06-CONTEXT.md` D-07.
+- **[06-02, NEW HIGH] `mismatch` regression test passes via the `duplicate` path** — the proposed test data (entry 1 row "X", result 2 rows "X") triggers BOTH a `duplicate horse_race_id` violation (`normalizer.py:301-307`) AND the `mismatch` violation (`normalizer.py:320-336`); the hard-violation filter checks `"duplicate"` first, so the test passes even if `"mismatch"` were removed from the token set. The PRODUCTION-CODE mitigation (filter extension with `"mismatch"`/`"1-to-1"`) is CORRECT — but the regression test does not prove the `"mismatch"` token is load-bearing for the 1-to-1-only case. Orchestrator-verified against `normalizer.py:293-336` and `06-02-PLAN.md:182,230-240`.
+- **[06-02, NEW HIGH] Mid-swap monkeypatch fires during staging write, not swap** — `_atomic_write_parquet` (`normalizer.py:643-653`) also calls `os.replace`, and `normalizer.os` == `integration.os` (same module object via `import os`); the plan writes 3 staging files via `_atomic_write_parquet` BEFORE the 3-call swap loop (`06-02-PLAN.md:246-248`), so the 2nd `os.replace` call fires during the 2nd staging write — the test never reaches the swap loop it claims to test. The validate-before-swap + idempotent recovery DESIGN is sound; the TEST does not prove it. Orchestrator-verified against `normalizer.py:67,643-653` and `06-02-PLAN.md:246-297`.
+- **[06-03, NEW HIGH] D-07 month-level completeness not guaranteed (floor too weak + no missing-month detection)** — (a) `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) only proves the scrape reached into 2026, not May 2026 per D-07 (`06-CONTEXT.md:45`: "2022年1月〜2026年5月末"); a scrape stopping at 2026-02 passes. (b) The preflight `>= 40` partitions (`06-03-PLAN.md:134`) counts PRESENT partitions but does not detect missing months between 2022-01 and 2026-05 (53 expected; JRA runs year-round so no legitimate off-months). Orchestrator-verified against `06-CONTEXT.md:45` and `06-03-PLAN.md:100-172,314-339`.
