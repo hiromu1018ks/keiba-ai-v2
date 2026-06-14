@@ -502,19 +502,27 @@ def write_partitioned_parquet(
         )
         return [placeholder_path]
 
-    # Group row indices by partition key.
-    groups: dict[str, pd.DataFrame] = {}
-    skipped = 0
-    for idx, key in zip(df.index, partition_keys):
-        if key is None:
-            skipped += 1
-            continue
-        groups.setdefault(key, df.loc[[idx]])
+    # Group rows by partition key. Use a temporary key column then groupby so
+    # all rows sharing a YYYYMM land in the same partition DataFrame (a naive
+    # setdefault loop would overwrite each group with a single-row frame).
+    # Rule 1 bug fix: the original setdefault version kept only the LAST row
+    # of each partition.
+    key_series = pd.Series(partition_keys, index=df.index, dtype="object")
+    skipped = int(key_series.isna().sum())
     if skipped > 0:
         logger.warning(
             f"write_partitioned_parquet({table_name!r}): skipped {skipped} rows "
             f"with no partition key"
         )
+    non_na_mask = key_series.notna()
+    if not non_na_mask.any():
+        # All rows had no partition key -- nothing to write (already logged).
+        return []
+    df_keyed = df.loc[non_na_mask].copy()
+    df_keyed["__partition_key__"] = key_series.loc[non_na_mask].values
+    groups: dict[str, pd.DataFrame] = {}
+    for key, group_df in df_keyed.groupby("__partition_key__", sort=False):
+        groups[str(key)] = group_df.drop(columns=["__partition_key__"])
 
     written: list[Path] = []
     for key in sorted(groups.keys()):
@@ -661,7 +669,12 @@ def normalize_to_parquet(
 
     # Obstacle filter: drop obstacle races; propagate to entries/results.
     # Mirrors kaggle_converter.convert line 89 (df = df[df["障害区分"] != "障害"]).
-    obstacle_mask = race_df["obstacle"] == "障害"
+    # IMPORTANT: race_df["obstacle"] is now a nullable string column (per the
+    # SCHEMA_DTYPE_MAP cast). ``pd.NA == "障害"`` returns ``pd.NA`` (not False),
+    # so a naive ``== "障害"`` mask would propagate NA and drop flat races too.
+    # Force NA -> False by combining the equality with a notna guard.
+    obstacle_values = race_df["obstacle"]
+    obstacle_mask = (obstacle_values == "障害") & obstacle_values.notna()
     dropped_count = int(obstacle_mask.sum())
     if dropped_count > 0:
         logger.info(
