@@ -1,63 +1,70 @@
 ---
 phase: 06-data-integration
 reviewers: [codex]
-reviewed_at: 2026-06-14T20:55:00+09:00
+reviewed_at: 2026-06-14T21:30:00+09:00
 plans_reviewed:
   - 06-01-PLAN.md
   - 06-02-PLAN.md
   - 06-03-PLAN.md
-cycle: 4
-prior_cycle_high: 5
+cycle: 5
+prior_cycle_high: 3
+cycle_5_replan_commit: 7a93589
 ---
 
-# Cross-AI Plan Review — Phase 6 (Cycle 4 — FINAL convergence)
+# Cross-AI Plan Review — Phase 6 (Cycle 5 — FINAL convergence)
 
-Cycle-4 re-review. The three PLAN.md files were replanned (git commits `c818eda` +
-`c1e26b9`) to address the 5 HIGHs that remained unresolved after cycle 3. Codex
-(gpt-5.5 via `codex exec`, codex-cli 0.139.0) re-reviewed the revised plans with
-repository read access (workdir: `/Users/hart/develop/keiba-ai-v2`, sandbox granted
+Cycle-5 re-review — the FINAL convergence pass of the plan-review-convergence loop.
+The three PLAN.md files were replanned (git commit `7a93589`, touching 06-02 + 06-03)
+to address the 3 HIGHs that remained unresolved after cycle 4. Codex (gpt-5.5 via
+`codex exec`, codex-cli 0.139.0) re-reviewed the revised plans with repository read
+access (workdir: `/Users/hart/develop/keiba-ai-v2`, sandbox granted
 `disk-full-read-access` + `git-read-access`). The orchestrator then independently
 re-verified every load-bearing claim Codex raised against the working tree before
 recording the adjudication below.
 
-**Headline:** of the 5 cycle-3 HIGHs, **2 are FULLY RESOLVED** (#2 source_stats unified,
-#11 zero-tolerance gate), **1 is PARTIALLY RESOLVED** (#14 floor — improved to
-`'2026-01-01'` but does not honor D-07's month-level contract through 2026-05), and the
-2 cycle-3 NEW HIGHs (#06-02 mismatch-as-soft, #06-02 transactionality) have **correct
-mitigations but flawed regression tests** — the production code fix is sound, but the
-tests do not isolate the failure path they claim to prove. Net result: **3 HIGH remain
-unresolved** (trend 14 → 7 → 5 → 3, still decreasing).
+**Headline:** of the 3 cycle-4 HIGHs, **2 are FULLY RESOLVED** (HIGH #1 mismatch test
+isolation, HIGH #3 D-07 month completeness) and **1 is PARTIALLY RESOLVED** (HIGH #2
+`_commit_staging` boundary isolation is correct, but the recovery test still does not
+prove what its name claims). Net result: **1 HIGH remains unresolved** (trend
+14 → 7 → 5 → 3 → 1, monotonic and decreasing — near convergence, one test-design
+patch away from 0).
 
-Codex raised **3 NEW HIGH defects**:
+The cycle-5 replan correctly fixed the structural problem Codex flagged in cycle 4
+(monkeypatch firing during staging writes): extracting the swap into a DEDICATED,
+PATCHABLE module-level function `_commit_staging(staging_dir, standard_dir)` IS the
+right boundary — patching that symbol no longer touches `_atomic_write_parquet`'s
+`os.replace`. The cycle-5 mismatch test (DISJOINT unique horse_race_ids `entry=["E1"]`,
+`result=["R1"]`) is genuinely load-bearing. The cycle-5 D-07 enforcement
+(`EXPECTED_FLOOR='2026-05-01'` + `set(present_months) == set(expected 202201..202605)`)
+correctly honors the LOCKED scope.
 
-1. **06-02 NEW HIGH — `mismatch` regression test passes via the `duplicate` path.** The
-   proposed test data (entry 1 row "X", result 2 rows "X") triggers BOTH a `duplicate
-   horse_race_id` violation (`normalizer.py:301-307`) AND the `mismatch` violation
-   (`normalizer.py:320-336`). Because the hard-violation filter checks `"duplicate"`
-   first, removing `"mismatch"` from the token set would leave the test still passing
-   via `duplicate`. The mitigation itself (adding `"mismatch"` to the filter) is
-   CORRECT and will protect production — but the regression test does not prove the
-   `mismatch` token is what catches the 1-to-1-only case. Orchestrator-verified against
-   `normalizer.py:301-336`.
-2. **06-02 NEW HIGH — mid-swap monkeypatch fires during staging write, not swap.**
-   `_atomic_write_parquet` (`normalizer.py:643-653`) also calls `os.replace`, and
-   `normalizer.os` is the SAME module object as `integration.os` (both do `import os`).
-   The plan writes 3 staging files via `_atomic_write_parquet` BEFORE the 3-call swap
-   loop, so the 2nd `os.replace` call fires during the 2nd staging write — the test
-   never reaches the swap loop it claims to test. Orchestrator-verified against
-   `normalizer.py:643-653` and `06-02-PLAN.md:246-248`.
-3. **06-03 NEW HIGH — D-07 month-level completeness not guaranteed.** `EXPECTED_FLOOR =
-   '2026-01-01'` only proves the scrape reached into 2026, not that it reached 2026-05
-   per D-07's LOCKED scope "2022年1月〜2026年5月末" (`06-CONTEXT.md:45`). Separately,
-   the preflight gate `>= 40` partitions does not detect missing months between
-   2022-01 and 2026-05 (53 months expected; JRA runs year-round so there are no
-   legitimate off-months). Orchestrator-verified against `06-CONTEXT.md:45` and
-   `06-03-PLAN.md:100-172`.
+Codex raised **1 NEW HIGH defect**:
 
-All 3 new HIGHs have one-line (or few-line) fixes. The convergence trend is monotonic
-(14 → 7 → 5 → 3), and the production-code mitigations are correct on the 2 cycle-3 NEW
-HIGHs — only the tests and the floor-strictness need patching. This is documented so a
-targeted cycle-5 patch (or in-execution fix) can close them without another full review.
+1. **06-02 NEW HIGH — partial-swap recovery test does not prove recovery from a
+   mixed-generation state.** The cycle-5 `_commit_staging` test mutates only the
+   `entry` and `result` scraped partitions (06-02-PLAN.md:298-317) — NOT the `race`
+   scraped partition. The swap order is `race → entry → result` and the failure fires
+   on the 2nd call (entry, before any of the mutated tables are swapped). At the
+   failure point, the only file swapped is `race`, which produces byte-identical
+   output to canonical (race input was unchanged). The mutated entry/result
+   new-generation files are staged but NEVER swapped (the failure fired first).
+   Therefore at the OSError, all 3 root files are STILL canonical. Worse, the
+   `failing_commit_staging` wrapper raises UNCONDITIONALLY (n==2 is always reached),
+   so `integrate_standard_layer` always propagates the OSError and the `try`-body
+   `post != canonical` assertion is DEAD CODE — never executed. The test effectively
+   proves only (a) integration raises OSError on a patched swap failure, and (b) a
+   normal re-run after restore is idempotent. It does NOT prove recovery from a
+   detectable mid-swap mixed-generation state, which is what its name
+   (`test_integration_partial_swap_recoverable`) claims. Orchestrator-verified
+   against 06-02-PLAN.md:290-359 and normalizer.py:643-653.
+
+The 06-03 MEDIUM (subdir name not validated against `\d{6}` — a stray `__pycache__`
+under `data/standard/scraped/` would be classified as an `extra_month` and halt the
+preflight) is legitimate but does not corrupt the corpus; it is a false-positive
+robustness gap, not a coverage gap.
+
+This is documented so a targeted cycle-6 patch (or in-execution fix) can close the
+last HIGH without another full review.
 
 ---
 
@@ -65,75 +72,55 @@ targeted cycle-5 patch (or in-execution fix) can close them without another full
 
 ### Plan 06-01 Review
 
-**Summary**
-
-Cycle-4のgrade検出順序、`G1` 正規表現マッチ、`race_condition=' '` によるearly-return
-bypass、odds/payoff完全非書き込み、core_tables_subdirリダイレクトは、いずれも実ソース
-(`kaggle_converter.py:36-44,82-90,244-278` / `flag_crosswalk.py:124-130,184-185` /
-`normalizer.py:95-192,643-653`) と整合している。06-01はcycle-3の5件HIGHを直接解決する
-計画ではないが、06-02/06-03の前提としては十分。
-
-### Cycle-3 HIGH Adjudication (06-01)
-
-06-01はcycle-3の5件HIGHを直接解決を主張していない（それらは06-02/06-03側）。関連する前提は妥当:
-
-- `_UNMAPPED_RACE_FLAGS` に `race_flag_listed`/`race_flag_stakes` が含まれ、後から `pd.NA` で追加される (`kaggle_converter.py:36-44,250-252`)
-- `derive_race_flags()` は空文字で早期returnする (`flag_crosswalk.py:184-185`)
-- `G1` (半角) は `_GRADE_REGEX` の `G3|G2|G1` にマッチする (`flag_crosswalk.py:124-130`)
-- `race_date` の正規dtypeは `string` (`normalizer.py:99`)
-
-### New Concerns (06-01)
-
-- **MEDIUM — Task 3のdtype検証が記述どおりではない。** 計画本文 (`06-01-PLAN.md:236`) は `win_odds` が `double` であることも検証すると記述しているが、提示されたPython検証コード (`06-01-PLAN.md:266-276`) は `race` テーブルの `race_flag_*`/`race_date`/`distance` だけを確認し、`entry.win_odds`/`entry.horse_weight` を検証していない。Orchestrator-verified: verify.automatedブロックに `win_odds` assertionなし。
-- **LOW — subdir指定時もodds CSVを読み、変換する。** 現在の `convert()` 処理順ではodds抽出 (`kaggle_converter.py:96-101`) が書込み判定より前。非書込み要件には違反しないが、22MB CSVの不要な読込みと変換が発生する。
-
-### Suggestions (06-01)
-
-- Task 3 verifyブロックに `entry.win_odds` (double), `entry.horse_weight` (double), `result.last_3f` のArrow dtype assertionを追加する。
-- `core_tables_subdir is not None` の場合はodds CSVの読込み・抽出自体をスキップする（性能改善、任意）。
-
-**Risk Assessment: LOW.** 実装の主要方針はコードに適合している。残件は検証範囲の拡充と
-性能上の最適化のみ。
-
----
+**Risk Assessment: LOW.** Unchanged in the cycle-5 replan (commit 7a93589 touched
+only 06-02 and 06-03). Carries forward the cycle-4 verdict (LOW) — the cycle-3
+fixes (grade detection ordering, `_GRADE_REGEX` `G1` match, odds/payoff non-write,
+8-point relocation) remain valid. No new concerns in this cycle.
 
 ### Plan 06-02 Review
 
 **Summary**
 
-`mismatch` をハード違反へ追加する実装方針自体は正しい（`normalizer.py:330-334` の違反文字列に
-`mismatch`/`1-to-1` があり、`duplicate`/`orphan` はない）。validate-before-swap +
-idempotent recoveryモデルも妥当。しかし、その2つの回帰テストはどちらも意図した経路を証明
-できない。
+The cycle-5 `_commit_staging` boundary isolation is CORRECT and the mismatch test
+is genuinely load-bearing — but the partial-swap recovery test still does not prove
+what its name claims.
 
-### Cycle-3 HIGH Adjudication (06-02)
+#### Cycle-4 HIGH Adjudication (06-02)
 
 | # | Verdict | Orchestrator-Verified Evidence |
 |---|---------|--------------------------------|
-| #6 (corpus transactionality) | **PARTIALLY RESOLVED** | Mitigation design (validate-before-swap via `tempfile.mkdtemp` staging + idempotent recovery) is CORRECT and the model is accurately described as NOT perfect atomicity. The 3 staging writes (`_atomic_write_parquet`, normalizer.py:643-653) + 3 swap `os.replace` calls is a real validate-before-swap flow. The recovery guarantee (reads only from immutable inputs `data/standard/kaggle/` + scraped partitions) is genuine. BUT the cycle-4 strengthened test does not prove recovery from a mid-SWAP failure — see NEW HIGH #2 below. |
-| #5 (idempotency) | **RESOLVED** (carried, KEPT) | Separate `kaggle_input_dir`; idempotency test present. |
-| #7 (autouse skip) | **RESOLVED** (carried, KEPT) | Two-class split. |
-| #8 (FK orphan raises) | **RESOLVED** (carried, KEPT) | Orphan injection + `validate_integrity` + ValueError. |
-| #8b (horse_race_id mismatch RAISES) | **PARTIALLY RESOLVED** | The PRODUCTION-CODE mitigation is CORRECT: extending the hard-violation filter to `"duplicate" in v or "orphan" in v or "mismatch" in v or "1-to-1" in v` (`06-02-PLAN.md:230-240`) genuinely catches the `"horse_race_id mismatch: entry/result are not 1-to-1"` violation string (`normalizer.py:330-334`), because that string contains `"mismatch"` and `"1-to-1"` but NEITHER `"duplicate"` NOR `"orphan"`. Verified at `normalizer.py:330-336`. A structurally inconsistent entry/result corpus will now RAISE in production. HOWEVER the regression test `test_horse_race_id_mismatch_raises` does not isolate the `mismatch` path — see NEW HIGH #1 below. |
-| #9 (column-set equality) | **RESOLVED** (carried, KEPT) | `_assert_column_set_equality` before reindex. |
+| HIGH #1 (mismatch test isolation) | **FULLY RESOLVED** | With cycle-5 test data `entry=["E1"], result=["R1"]`: check (b) entry dup (normalizer.py:294-299) — `Counter({"E1":1})`, no dup → passes; check (c) result dup (normalizer.py:302-307) — `Counter({"R1":1})`, no dup → passes; check (d) 1-to-1 (normalizer.py:320-336) — `Counter({"E1":1}) != Counter({"R1":1})` → returns EXACTLY ONE violation `"horse_race_id mismatch: entry/result are not 1-to-1 (only-in-entry=1, only-in-result=1, count-mismatch={})"` containing `"mismatch"` and `"1-to-1"`; checks (e)/(f) FK (normalizer.py:338-372) — no orphans IF race_df contains both referenced race_ids (the plan explicitly instructs this at 06-02-PLAN.md:270). So `validate_integrity` returns `len == 1` and `"mismatch" in violations[0]`. The `assert len(violations) == 1` is genuinely load-bearing: removing `"mismatch"` from the hard-violation filter would let this data pass with NO hard violation, and `pytest.raises(ValueError)` would fail. Orchestrator-verified against normalizer.py:293-372 and 06-02-PLAN.md:182,270-282. |
+| HIGH #2 (`_commit_staging` boundary) | **PARTIALLY RESOLVED** | The BOUNDARY ISOLATION is correct: `_atomic_write_parquet` (normalizer.py:643-653) calls `os.replace` at line 653 during STAGING writes, but the cycle-5 swap is extracted into a DEDICATED `_commit_staging(staging_dir, standard_dir)` (06-02-PLAN.md:218-231) that performs its own 3 `os.replace` calls. Patching `monkeypatch.setattr(integration_mod, "_commit_staging", failing_swap)` (06-02-PLAN.md:328) does NOT touch `_atomic_write_parquet`'s os.replace — staging writes complete normally, and the monkeypatch fires only during the actual swap. This structurally fixes the cycle-4 defect (monkeypatch firing during staging). HOWEVER the recovery test itself does not prove recovery — see NEW HIGH #1 below. The PRODUCTION-CODE design (validate-before-swap via `tempfile.mkdtemp` + idempotent recovery) remains sound; only the test's observable-claim is flawed. |
+| HIGH #6 (transactionality design — carried) | **RESOLVED** (KEPT) | Validate-before-swap via `tempfile.mkdtemp(prefix='.integration_staging_', dir=standard_dir)` (06-02-PLAN.md:261); staged files validated before swap; idempotent recovery via re-run against immutable inputs. The cycle-5 `_commit_staging` extraction does not regress this. |
+| HIGH #5 (idempotency — carried) | **RESOLVED** (KEPT) | Separate `kaggle_input_dir`; idempotency test retained. |
+| HIGH #7 (autouse skip — carried) | **RESOLVED** (KEPT) | Two-class split. |
+| HIGH #8 (FK orphan — carried) | **RESOLVED** (KEPT) | Orphan injection + `validate_integrity` + ValueError. |
+| HIGH #8b (mismatch filter — carried, cycle-4 prod fix + cycle-5 test fix) | **RESOLVED** | Filter extended with `"mismatch"`/`"1-to-1"` (matches normalizer.py:330-334 string containing NEITHER `"duplicate"` NOR `"orphan"`); cycle-5 test proves token is load-bearing via DISJOINT unique horse_race_ids. |
+| HIGH #9 (column-set equality — carried) | **RESOLVED** (KEPT) | `_assert_column_set_equality` before reindex. |
 
-### New Concerns (06-02)
+#### New Concerns (06-02)
 
-- **HIGH — `mismatch` regression test passes via the `duplicate` path.** The proposed test data (`06-02-PLAN.md:182,254`) is entry 1 row with horse_race_id "X", result 2 rows BOTH with horse_race_id "X". With this data, `validate_integrity` returns violations containing BOTH: (a) `"duplicate horse_race_id: 1 duplicated rows in result table"` (from check (c) at `normalizer.py:301-307` — result has 2 rows with the same id, so `duplicated().sum() == 1`); AND (b) `"horse_race_id mismatch: entry/result are not 1-to-1 (..., count-mismatch={'X': (1, 2)})"` (from check (d) at `normalizer.py:320-336` — `Counter({"X":1}) != Counter({"X":2})`). Because the hard-violation filter iterates the violations list and checks `"duplicate"` first, the test PASSES even if `"mismatch"` were removed from the token set. The test does not prove the `"mismatch"` token is load-bearing for the 1-to-1-only case (where entry and result have DIFFERENT keys, not duplicates). Orchestrator-verified against `normalizer.py:293-336` and `06-02-PLAN.md:182,230-240`.
-- **HIGH — mid-swap monkeypatch fires during staging write, not swap.** The plan's swap design (`06-02-PLAN.md:246-248`) is: (1) write all 3 merged frames to staging via `_atomic_write_parquet(merged, staging_dir / f"{table}.parquet")` — 3 calls to `os.replace` (one per file, inside `_atomic_write_parquet` at `normalizer.py:653`); (2) validate staged files; (3) swap each into root via `os.replace(staging_dir / f"{table}.parquet", standard_dir / f"{table}.parquet")` — 3 more `os.replace` calls. `normalizer.py` does `import os` (`normalizer.py:67`) and the plan instructs `integration.py` to also `import os` — so `normalizer.os` and `integration.os` reference the SAME module object. The test's `monkeypatch.setattr(integration_mod.os, "replace", failing_replace)` (`06-02-PLAN.md:276`) patches that shared module, so the "2nd call" counter increments during the 2nd STAGING write (which happens before the swap loop). The test fires during staging, never reaches the swap loop, and does not prove recovery from a mid-SWAP failure — exactly the failure mode Codex flagged in cycle 2. Additionally, because a clean re-run from identical inputs produces byte-identical output, the assertion `post != canonical` is vacuously misleading (if the integration raised during staging, the canonical files were never overwritten, so `post == canonical`). Orchestrator-verified against `normalizer.py:67,643-653` and `06-02-PLAN.md:246-248,268-297`.
-- **MEDIUM — Return-type annotation inaccurate.** `integrate_standard_layer(...) -> dict[str, Path]` but the return includes `{"audit": {...}}` (a dict, not a Path). Should be `dict[str, Path | dict]` or a TypedDict. (Carried from cycle 3, not yet fixed.)
+- **HIGH — partial-swap recovery test does not prove recovery from a mixed-generation state.** The cycle-5 `_commit_staging` test `test_integration_partial_swap_recoverable` (06-02-PLAN.md:290-359) has two structural flaws that together make it prove only "integration raises OSError on a patched swap" + "normal re-run is idempotent", NOT the claimed "recovery from a mid-swap mixed-generation state":
+  1. **Race input is not mutated, but race is the only file swapped before the failure.** The test mutates `entry.parquet` and `result.parquet` scraped partitions (06-02-PLAN.md:302-317) but NOT `race.parquet`. The swap order is `tbls = ("race", "entry", "result")` and `failing_commit_staging` raises when `call_counter["n"] == 2` (06-02-PLAN.md:322-327) — i.e. on the 2nd iteration, which is `entry`. So the sequence is: n=1 → `race` swapped via `real_replace` (race new-gen == canonical because race input unchanged → byte-identical); n=2 → raises OSError on `entry` BEFORE `real_replace`. At the failure point: `race.parquet` root = new-gen = canonical (identical bytes); `entry.parquet` and `result.parquet` root = OLD canonical (never swapped, the mutated new-gen versions are still in staging). So all 3 root files == canonical. The assertion `any(post.get(t) != canonical[t] for t in tbls)` (06-02-PLAN.md:339) would FAIL if reached — but it's never reached because of flaw #2.
+  2. **The `failing_commit_staging` raise is unconditional, so the `try`-body `post != canonical` assertion is dead code.** `failing_commit_staging` always reaches `n == 2` (there is no early return or skip), so it always raises OSError. `integrate_standard_layer` propagates the OSError, the `try` body's `post = {...}` and the `assert any(post != canonical)` never execute — control jumps to `except OSError: pass` (06-02-PLAN.md:341-342). The test therefore never observes a post-failure corpus state. The recovery half (06-02-PLAN.md:344-358) then restores `_commit_staging`, re-invokes, and asserts byte-identical re-run — but this proves only standard idempotency (the third invocation matches the second), NOT recovery from an inconsistent state, because there was never an inconsistent state to recover FROM (all 3 files were canonical at the failure point).
+  - **Why this matters:** the test's name and docstring claim it proves "idempotent recovery under the REAL mid-swap failure". In reality it proves (a) the OSError propagates, and (b) a clean re-run after a clean (non-mutating) failure is idempotent. A genuine recovery regression (e.g. `_commit_staging` swallowing the OSError, or `integrate_standard_layer` reading its own output on re-run) would NOT be caught by this test.
+  - Orchestrator-verified against 06-02-PLAN.md:290-359 and normalizer.py:643-653.
+- **MEDIUM — return-type annotation inaccurate (carried).** `integrate_standard_layer(...) -> dict[str, Path]` but the return includes `{"audit": {...}}` (a dict, not a Path). Should be `dict[str, Path | dict]` or a TypedDict. (Carried from cycle 3, not yet fixed; not load-bearing.)
 
-### Suggestions (06-02)
+#### Suggestions (06-02)
 
-- **One-line fix for NEW HIGH #1:** change the `test_horse_race_id_mismatch_raises` test data so entry and result have DIFFERENT keys (no duplicates in either table) — e.g. entry has 1 row with horse_race_id "X", result has 1 row with horse_race_id "Y". Then `Counter(entry)={"X":1}` and `Counter(result)={"Y":1}`, so check (c) finds NO duplicates (passes), and check (d) returns ONLY the `"horse_race_id mismatch: entry/result are not 1-to-1 (only-in-entry=1, only-in-result=1, count-mismatch={})"` violation. BEFORE asserting `integrate_standard_layer` raises, assert `validate_integrity(...)` returns a list whose ONLY entry contains `"mismatch"` (proving the `mismatch` token is the load-bearing classifier).
-- **Few-line fix for NEW HIGH #2:** extract the swap loop into a dedicated function `_swap_staged_files(staging_dir, standard_dir)` that calls `os.replace` directly (not via `_atomic_write_parquet`), and patch ONLY that function (e.g. `monkeypatch.setattr("src.pipeline.integration._swap_staged_files", failing_swap)`), OR use a counter that skips the first N calls (where N = number of staging writes). Additionally, to make the mixed-generation observable, mutate an input between the clean run and the failing run (e.g. add a row to a scraped partition) so the "new generation" produces a different SHA-256 than the canonical — then the assertion `post != canonical` is meaningful.
+- **Few-line fix for NEW HIGH #1:** to make the recovery test genuinely prove recovery from a mixed-generation state:
+  1. **Mutate the `race` scraped partition too** (append a row, bump a race_id), so the race new-gen differs from canonical. Then the 1st swap (race) DOES replace canonical with a different file — at the failure point (entry, n=2), `race.parquet` root = new-gen != canonical, `entry`/`result` root = old canonical → a REAL mixed-generation state.
+  2. **Catch the OSError, then ASSERT the mixed state** before recovery: `assert post["race"] != canonical["race"] and post["entry"] == canonical["entry"]` (race is new-gen, entry/result are old canonical). This is the observable proof of a mid-swap inconsistent corpus.
+  3. **Recovery assertion must compare against an INDEPENDENTLY computed expected hash**, not the recovery run's own output. Either (a) run the integration against a SEPARATE temp dir with identical mutated inputs to compute the expected hashes independently, then assert the recovery-run output matches those, or (b) assert that the mutated extra row is now present in the recovered `entry.parquet` (a content check, not a self-referential hash check).
+  - The current `fresh_after` is computed from the recovery run's own output (06-02-PLAN.md:351), so the third-run idempotency check (06-02-PLAN.md:355-358) is a tautology — it proves the second and third runs agree, not that either is correct.
 - Fix the return-type annotation (carried MEDIUM).
 
-**Risk Assessment: HIGH.** Production-code mitigations are correct on both cycle-3 NEW HIGHs, but
-the two load-bearing regression tests do not prove what they claim. A structurally inconsistent
-entry/result corpus WILL now raise in production (the filter extension is genuine), but the test
-suite would pass even if the `"mismatch"` token were accidentally removed — a false sense of
-regression coverage. The mid-swap test fires at the wrong stage.
+**Risk Assessment: HIGH.** The boundary isolation (cycle-4 HIGH #2 structural fix) is
+correct, and the mismatch test (cycle-4 HIGH #1) is genuinely load-bearing. But the
+partial-swap recovery test still does not prove recovery from a mixed-generation state
+— it proves only OSError propagation + standard idempotency. A genuine recovery
+regression would pass this test undetected.
 
 ---
 
@@ -141,105 +128,82 @@ regression coverage. The mid-swap test fires at the wrong stage.
 
 **Summary**
 
-unified source_stats (cycle-4) と ゼロ許容preflightは妥当で実行可能。一方、
-`EXPECTED_FLOOR='2026-01-01'` はD-07の「2026年5月末まで」を保証せず、preflightも
-月次完全性（欠落月検出）を行わない。結果として、完全でないD-06 corpusを受理できる。
+The cycle-5 D-07 enforcement (`EXPECTED_FLOOR='2026-05-01'` + `set(present_months) ==
+set(expected 202201..202605)` + `202605` partition non-empty) is correct and complete.
+One MEDIUM robustness gap remains (subdir name validation).
 
-### Cycle-3 HIGH Adjudication (06-03)
+#### Cycle-4 HIGH Adjudication (06-03)
 
 | # | Verdict | Orchestrator-Verified Evidence |
 |---|---------|--------------------------------|
-| #11 (preflight gate strictness) | **RESOLVED** | The cycle-4 gate `if len(invalid) > 0: sys.exit(1)` (`06-03-PLAN.md:168-170`) fails on ANY invalid partition (missing file, `num_rows == 0` in any of the 3 tables, or race_date mismatch). This correctly honors the prose contract "non-emptiness for ALL THREE". A single empty `entry.parquet` no longer passes. The cycle-3 silent-pass bug (swallowed exception + unasserted `n`) remains fixed (exceptions re-raised at `06-03-PLAN.md:148-149,157-158`). Verified at `06-03-PLAN.md:124-172`. NOTE: the gate validates PRESENT partitions only — it does not detect MISSING months (see NEW HIGH #3 below); that is a separate concern from the #11 gate-strictness defect, which is genuinely resolved. |
-| #14 (EXPECTED_FLOOR) | **PARTIALLY RESOLVED** | The cycle-4 floor `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) is a genuine improvement over cycle-3's `'2024-01-01'` — a scrape stopping at 2025-12 now FAILS. The triple assertion (`dmax == actual_scraped_max` AND `actual_scraped_max >= '2026-01-01'` AND `dmin in 2015-Q1`) is structurally correct. HOWEVER the floor does not honor the full D-07 contract (`06-CONTEXT.md:45`: "実データ全部（2015-2026/5）" / Phase 4 D-05 design "2022年1月〜2026年5月末"). A scrape reaching 2026-02 passes `>= '2026-01-01'` but violates D-07's "through 2026年5月末". Combined with the per-year `> 500 races` check (which passes if 2026 has > 500 races from Jan+Feb alone), a scrape stopping at 2026-02 can pass all gates. See NEW HIGH #3. |
-| #2 (source_stats Kaggle-only) | **RESOLVED** | The cycle-4 fix (`06-03-PLAN.md:200-207,268-298`) computes `source_stats` AND `source_counts` from the UNIFIED frames `urace = pd.concat([krace, srace])` / `uentry = pd.concat([kentry, sentry])` — the SAME Kaggle + scraped inputs that integration writes. Because `validate_distributions` (`validators.py:283-345`) reads `parquet_dir / f"{table}.parquet"` (the unified output) and compares min/max/mean with `tolerance=0.01` absolute, comparing identical-corpus stats passes within tolerance. Same for `validate_null_rates` (`validators.py:227-276`). `dist_pass = True`, `null_pass = True`, `overall_pass = True`. The cycle-3 runtime-FAIL defect is genuinely fixed. Orchestrator-verified against `validators.py:227-345,800-865` and `06-03-PLAN.md:268-298`. |
-| NEW PK-set union (race-only) | **RESOLVED** (carried, KEPT) | Verify block iterates all 3 tables; entry/result PK drift caught. |
-| #3 (8-point relocation) | **RESOLVED** | The FULL 8-point `run_all_validations` now runs here against `data/standard/` root (5 tables coexist) AND passes execution because source_stats is unified (cycle-4 fix to #2). The phase-level #3 resolution (which depended on #2 in cycle 3) is now complete. |
-| #15 (halt-on-smoke-only) | **RESOLVED** (carried, KEPT) | `< 40` partitions → exit 1. |
-| #16 (per-partition 3-file presence + race_date) | **RESOLVED** (carried, KEPT) | modulo the NEW HIGH #3 missing-month gap. |
-| #17 (odds/payoff SHA-256) | **RESOLVED** (carried, KEPT) | Pre/post SHA-256 + row count in verify.automated. |
-| #18 (per-period graded) | **RESOLVED** (carried, KEPT) | Per-period derive_race_flags comparison. |
+| HIGH #3 / #14 (D-07 floor + missing months) | **FULLY RESOLVED** | (a) Floor: `EXPECTED_FLOOR = '2026-05-01'` (06-03-PLAN.md:356) — a scrape stopping at 2026-04 now FAILS the floor (cycle-4's `'2026-01-01'` was too weak). Honors CONTEXT D-07 line 45 "実データ全部（2015-2026/5）" + Phase 4 D-05 "2022年1月〜2026年5月末". (b) Missing months: `expected_months = set(pd.period_range("2022-01", "2026-05", freq="M").strftime("%Y%m"))` = 53 months (verified: 202201..202605 inclusive); `set(present_months) == set(expected_months)` enforced with `missing_months`/`extra_months` halting on non-empty (06-03-PLAN.md:142-152). A scrape missing any month between 2022-01 and 2026-05 FAILS. (c) Structural May-2026 proof: `202605` partition exists + `pq.ParquetFile('data/standard/scraped/202605/race.parquet').metadata.num_rows > 0` (06-03-PLAN.md:192-194). All per-partition race_date values match their dir name (06-03-PLAN.md:179-183), so a non-empty 202605 cannot have race_date max < 2026-05 — the date floor and partition check are consistent. Orchestrator-verified against 06-CONTEXT.md:45 and 06-03-PLAN.md:130-197. |
+| HIGH #11 (zero-tolerance gate — carried) | **RESOLVED** (KEPT) | `if len(invalid) > 0: sys.exit(1)` (06-03-PLAN.md:188-189); exceptions re-raised. |
+| HIGH #2 (source_stats unified — carried) | **RESOLVED** (KEPT) | `source_stats` computed from `urace = pd.concat([krace, srace])` / `uentry` (06-03-PLAN.md:302-322); same corpus as output → within tolerance → `overall_pass=True`. |
+| HIGH #3 (8-point relocation — carried) | **RESOLVED** (KEPT) | Full 8-point `run_all_validations` against `data/standard/` root (5 tables coexist). |
+| HIGH #17 (odds/payoff SHA-256 — carried) | **RESOLVED** (KEPT) | Pre/post SHA-256 + row count in verify.automated (06-03-PLAN.md:271-285). |
+| HIGH #18 (per-period graded — carried) | **RESOLVED** (KEPT) | Per-period `derive_race_flags` comparison. |
+| NEW PK-set union (race + entry + result — carried) | **RESOLVED** (KEPT) | PK-set union verified for all 3 tables (06-03-PLAN.md:371-381). |
+| HIGH #15 (halt-on-smoke-only — carried) | **RESOLVED** (KEPT) | `< 40` partitions → exit 1 (retained as redundant sanity below the set-equality gate). |
 
-### New Concerns (06-03)
+#### New Concerns (06-03)
 
-- **HIGH — D-07 month-level completeness not guaranteed (two sub-defects).** (a) Floor too weak: `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) only proves the scrape reached into calendar year 2026, not that it reached May 2026 per D-07's LOCKED scope (`06-CONTEXT.md:45`: "2022年1月〜2026年5月末"). A scrape stopping at 2026-02-28 passes the floor (`2026-02-28 >= 2026-01-01`) and the per-year `> 500 races` check (Jan+Feb 2026 JRA races easily exceed 500), yet violates D-07. (b) No missing-month detection: the preflight gate `if len(dirs) < 40` (`06-03-PLAN.md:134`) counts PRESENT partitions but does not verify WHICH months are present. From 2022-01 to 2026-05 is 53 months; if 13 months are entirely missing (e.g. all of 2024-Q3 + scattered months) but 40+ remain, the gate passes. JRA runs year-round (中央競馬 has meetings every month), so there are no legitimate off-months to tolerate. Orchestrator-verified against `06-CONTEXT.md:45`, `06-03-PLAN.md:100-172,314-339`, and the ROADMAP (Phase 4 D-05 design target 2022-01〜2026-05).
-- **MEDIUM — `validate_sample_rows` provides weak coverage for scraped-origin rows.** When a parquet row's key (race_id) is not found in the Kaggle CSV source, `validate_sample_rows` `continue`s and treats it as "filtered out, OK" (`validators.py:570-576`). Since scraped rows have race_ids absent from the Kaggle CSV, they are skipped rather than validated against a source. The 8-point `sample_rows` check therefore effectively validates only Kaggle-origin rows in the unified corpus. This is a coverage gap, not a correctness defect — the per-table PK-set union check (NEW HIGH cycle-3, RESOLVED) and the per-partition preflight already cover scraped integrity. Orchestrator-verified against `validators.py:565-576`.
+- **MEDIUM — any subdirectory under `data/standard/scraped/` is treated as a month partition.** `dirs = sorted(d for d in root.iterdir() if d.is_dir())` (06-03-PLAN.md:138) collects ALL subdirectories without validating the name matches `\d{6}`. A stray `__pycache__/`, `.tmp/`, `.DS_Store`-adjacent directory, or IDE artifact would be classified as an `extra_month` and halt the preflight (06-03-PLAN.md:145-152). This is a false-positive robustness gap (the corpus is NOT corrupted — the gate fails loudly rather than silently passing a bad corpus), so MEDIUM not HIGH. The fix is to filter partition candidates with `re.fullmatch(r"\d{6}", d.name)` and warn on (not halt for) non-matching directories. Orchestrator-verified against 06-03-PLAN.md:138-152.
+- **MEDIUM — `validate_sample_rows` weak coverage for scraped-origin rows (carried).** When a parquet row's race_id is not found in the Kaggle CSV source, `validate_sample_rows` `continue`s and treats it as "filtered out, OK" (validators.py:565-576). Scraped rows have race_ids absent from the Kaggle CSV, so they are skipped rather than validated against a source. Coverage gap, not correctness defect. (Carried from cycle 4.)
 
-### Suggestions (06-03)
+#### Suggestions (06-03)
 
-- **One-line fix for NEW HIGH #3 (floor):** strengthen `EXPECTED_FLOOR` to require reaching at least May 2026: `EXPECTED_FLOOR = '2026-05-01'` (honors D-07's "2026年5月末" — a scrape stopping at 2026-04 fails). Optionally also assert the `202605` partition exists: `assert (Path('data/standard/scraped/202605') / 'race.parquet').exists()`. Document that D-07's exact last-race-day (e.g. last JRA meeting before 2026-06) is verified in Phase 9 backtest planning.
-- **Few-line fix for NEW HIGH #3 (missing months):** add an expected-months set check to the preflight:
-  ```python
-  expected = pd.period_range("2022-01", "2026-05", freq="M").strftime("%Y%m")
-  present = {d.name for d in dirs}
-  missing = sorted(set(expected) - present)
-  if missing:
-      print(f"BLOCKING: missing scraped months per D-07: {missing}"); sys.exit(1)
-  ```
-  (Drop the `>= 40` count gate, or keep it as a redundant sanity check below the strict set check.)
+- Filter partition candidates: `dirs = sorted(d for d in root.iterdir() if d.is_dir() and re.fullmatch(r"\d{6}", d.name))`; warn on non-matching directories separately.
 - Optional: add a scraped-specific sample validation (compare a sample of scraped rows against the scraped raw HTML partition source) to close the `validate_sample_rows` MEDIUM.
 
-**Risk Assessment: HIGH.** source_stats unified and zero-tolerance gate are genuine resolutions,
-but the D-07 month-level completeness is not enforced — an incomplete scrape (stopping at 2026-02, or
-missing 13 scattered months) can pass all gates and produce a corpus that silently violates the
-LOCKED scope. Since D-07 is the contract that takes precedence over ROADMAP text, this is a real
-coverage gap the EV downstream (Phase 9 backtest over 2015-2026/5) depends on.
+**Risk Assessment: LOW-MEDIUM.** D-07 month-range and missing-month enforcement are
+complete. Only the extra-directory false-positive robustness gap remains; it does not
+corrupt the corpus.
 
 ---
 
 ## Consensus Summary
 
-Single-reviewer cycle (Codex / gpt-5.5). The orchestrator independently verified every
-load-bearing claim Codex raised against the working tree — all corroborated (see inline
-"Orchestrator-Verified Evidence" in each adjudication row). No divergent views.
+Single-reviewer cycle (Codex / gpt-5.5). The orchestrator independently verified
+every load-bearing claim Codex raised against the working tree — all corroborated
+(see inline "Orchestrator-Verified Evidence" in each adjudication row). No divergent
+views.
 
-### Resolved cycle-3 HIGHs (2 — counted out)
+### Resolved cycle-4 HIGHs (2 — counted out)
 
-- **#2 source_stats Kaggle-only** — `source_stats` AND `source_counts` now computed from UNIFIED `urace`/`uentry` (Kaggle + scraped combined); `validate_distributions`/`validate_null_rates` compare identical-corpus data → within tolerance → `overall_pass=True`. The cycle-3 runtime-FAIL is genuinely fixed.
-- **#11 preflight gate strictness** — `if len(invalid) > 0: sys.exit(1)` (zero-tolerance); exceptions re-raised; the cycle-2 silent-pass bug remains fixed.
+- **HIGH #1 mismatch test isolation** — cycle-5 test data `entry=["E1"], result=["R1"]` (DISJOINT UNIQUE horse_race_ids) makes `validate_integrity` return EXACTLY ONE violation containing `"mismatch"`; the `assert len(violations) == 1` is genuinely load-bearing (removing the token lets the data pass with no hard violation). The token now provably classifies the 1-to-1-only case.
+- **HIGH #3 D-07 month-level completeness** — `EXPECTED_FLOOR='2026-05-01'` + `set(present_months) == set(expected 202201..202605)` (53 months) + `202605` partition non-empty. A scrape stopping at 2026-04, or missing any scattered month, now FAILS the gate. Honors CONTEXT D-07 LOCKED scope.
 
-### Unresolved HIGHs (3 — carried forward)
+### Unresolved HIGH (1 — carried forward)
 
-1. **[06-02, NEW HIGH] `mismatch` regression test passes via the `duplicate` path.** The proposed test data (entry 1 row "X", result 2 rows "X") triggers BOTH a `duplicate horse_race_id` violation (`normalizer.py:301-307`) AND the `mismatch` violation (`normalizer.py:320-336`). The hard-violation filter checks `"duplicate"` first, so the test passes even if `"mismatch"` were removed. The PRODUCTION-CODE mitigation (extending the filter with `"mismatch"`/`"1-to-1"`) is CORRECT and will protect the unified corpus — but the regression test does not prove the `"mismatch"` token is load-bearing. Orchestrator-verified against `normalizer.py:293-336` and `06-02-PLAN.md:182,230-240`.
-2. **[06-02, NEW HIGH] Mid-swap monkeypatch fires during staging write, not swap.** `_atomic_write_parquet` (`normalizer.py:643-653`) also calls `os.replace`, and `normalizer.os` == `integration.os` (same module object via `import os`). The plan writes 3 staging files via `_atomic_write_parquet` BEFORE the 3-call swap loop (`06-02-PLAN.md:246-248`), so the 2nd `os.replace` call fires during the 2nd staging write — the test never reaches the swap loop. Additionally, a clean re-run from identical inputs produces byte-identical output, so `post != canonical` is vacuously misleading. The validate-before-swap + idempotent recovery DESIGN is sound; the TEST does not prove it. Orchestrator-verified against `normalizer.py:67,643-653` and `06-02-PLAN.md:246-297`.
-3. **[06-03, NEW HIGH] D-07 month-level completeness not guaranteed (floor too weak + no missing-month detection).** (a) `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) only proves the scrape reached into 2026, not May 2026 per D-07 (`06-CONTEXT.md:45`: "2022年1月〜2026年5月末"). A scrape stopping at 2026-02 passes. (b) The preflight `>= 40` partitions (`06-03-PLAN.md:134`) counts PRESENT partitions but does not detect missing months between 2022-01 and 2026-05 (53 expected; JRA runs year-round so no legitimate off-months). Orchestrator-verified against `06-CONTEXT.md:45` and `06-03-PLAN.md:100-172,314-339`.
+1. **[06-02, NEW HIGH] partial-swap recovery test does not prove recovery from a mixed-generation state** — the test mutates only `entry`/`result` scraped partitions, but the swap order (`race → entry → result`) and the unconditional raise on the 2nd call (entry) mean only `race` is swapped before the failure, and `race` was not mutated (so race new-gen == canonical). At the failure point all 3 root files are still canonical; and the `failing_commit_staging` raise is unconditional, so the `try`-body `post != canonical` assertion is dead code (control jumps to `except OSError: pass`). The test proves only OSError propagation + standard idempotency, NOT recovery from a detectable mid-swap mixed-generation state. The `_commit_staging` BOUNDARY ISOLATION (the cycle-4 structural defect) IS correctly fixed; only the test's observable claim is flawed. Orchestrator-verified against 06-02-PLAN.md:290-359 and normalizer.py:643-653.
 
 ### Divergent Views
 
 Single reviewer — no divergence. Orchestrator source verification corroborates all
 load-bearing claims rather than contradicting.
 
-### Recommended next actions (targeted patches — cycle 5)
+### Recommended next actions (targeted patch — cycle 6)
 
-All 3 unresolved HIGHs have one-line or few-line fixes. They can be applied via a targeted
+The single unresolved HIGH has a few-line fix. It can be applied via a targeted
 patch commit rather than another full convergence cycle:
 
-1. **06-02 `mismatch` test isolation (NEW HIGH #1):** change `test_horse_race_id_mismatch_raises`
-   test data to entry 1 row "X", result 1 row "Y" (different keys, no duplicates in either
-   table). Then `validate_integrity` returns ONLY the `mismatch` violation (check (c) finds no
-   duplicates). BEFORE asserting `integrate_standard_layer` raises, assert `validate_integrity(...)`
-   returns a list whose ONLY entry contains `"mismatch"` (proving the token is load-bearing).
-2. **06-02 mid-swap test isolation (NEW HIGH #2):** extract the swap loop into a dedicated
-   function `_swap_staged_files(staging_dir, standard_dir)` and patch ONLY that function (so the
-   counter applies to swap calls, not staging writes). Alternatively, skip the first N calls where
-   N = number of staging writes. To make the mixed-generation observable, mutate an input between
-   the clean run and the failing run (add a row to a scraped partition) so the new generation
-   produces a different SHA-256 than canonical — then `post != canonical` is meaningful.
-3. **06-03 D-07 floor + missing months (NEW HIGH #3):** (a) change `EXPECTED_FLOOR = '2026-01-01'`
-   to `EXPECTED_FLOOR = '2026-05-01'` and optionally assert the `202605` partition exists; (b) add
-   an expected-months set check to the preflight: `expected = pd.period_range("2022-01", "2026-05",
-   freq="M").strftime("%Y%m"); missing = sorted(set(expected) - {d.name for d in dirs}); assert not
-   missing`.
+- **06-02 partial-swap recovery test (NEW HIGH #1):** (a) mutate the `race` scraped
+  partition too (so the race new-gen differs from canonical — the 1st swap then
+  produces a genuinely different file); (b) after catching the OSError, ASSERT the
+  mixed state before recovery (`post["race"] != canonical["race"]` AND
+  `post["entry"] == canonical["entry"]`); (c) compute the expected recovery hashes
+  INDEPENDENTLY (run integration against a separate temp dir with identical mutated
+  inputs), then assert the recovery-run output matches those independent hashes
+  rather than the recovery run's own output.
 
-After these 3 patches, the phase should reach 0 HIGHs.
+After this 1 patch, the phase should reach 0 HIGHs and the loop converges.
 
 ---
 
 ## CYCLE_SUMMARY
 
-CYCLE_SUMMARY: current_high=3
+CYCLE_SUMMARY: current_high=1
 
 ## Current HIGH Concerns
 
-- **[06-02, NEW HIGH] `mismatch` regression test passes via the `duplicate` path** — the proposed test data (entry 1 row "X", result 2 rows "X") triggers BOTH a `duplicate horse_race_id` violation (`normalizer.py:301-307`) AND the `mismatch` violation (`normalizer.py:320-336`); the hard-violation filter checks `"duplicate"` first, so the test passes even if `"mismatch"` were removed from the token set. The PRODUCTION-CODE mitigation (filter extension with `"mismatch"`/`"1-to-1"`) is CORRECT — but the regression test does not prove the `"mismatch"` token is load-bearing for the 1-to-1-only case. Orchestrator-verified against `normalizer.py:293-336` and `06-02-PLAN.md:182,230-240`.
-- **[06-02, NEW HIGH] Mid-swap monkeypatch fires during staging write, not swap** — `_atomic_write_parquet` (`normalizer.py:643-653`) also calls `os.replace`, and `normalizer.os` == `integration.os` (same module object via `import os`); the plan writes 3 staging files via `_atomic_write_parquet` BEFORE the 3-call swap loop (`06-02-PLAN.md:246-248`), so the 2nd `os.replace` call fires during the 2nd staging write — the test never reaches the swap loop it claims to test. The validate-before-swap + idempotent recovery DESIGN is sound; the TEST does not prove it. Orchestrator-verified against `normalizer.py:67,643-653` and `06-02-PLAN.md:246-297`.
-- **[06-03, NEW HIGH] D-07 month-level completeness not guaranteed (floor too weak + no missing-month detection)** — (a) `EXPECTED_FLOOR = '2026-01-01'` (`06-03-PLAN.md:332`) only proves the scrape reached into 2026, not May 2026 per D-07 (`06-CONTEXT.md:45`: "2022年1月〜2026年5月末"); a scrape stopping at 2026-02 passes. (b) The preflight `>= 40` partitions (`06-03-PLAN.md:134`) counts PRESENT partitions but does not detect missing months between 2022-01 and 2026-05 (53 expected; JRA runs year-round so no legitimate off-months). Orchestrator-verified against `06-CONTEXT.md:45` and `06-03-PLAN.md:100-172,314-339`.
+- **[06-02, NEW HIGH] partial-swap recovery test does not prove recovery from a mixed-generation state** — the test mutates only `entry`/`result` scraped partitions but NOT `race`; the swap order is `race → entry → result` and `failing_commit_staging` raises unconditionally on the 2nd call (entry), so the only file swapped before the failure is `race` (which was not mutated → race new-gen byte-identical to canonical). At the failure point all 3 root files are still canonical. Worse, the unconditional raise means the `try`-body `post != canonical` assertion is dead code (control always jumps to `except OSError: pass`), so the test never observes a post-failure corpus state. The test proves only (a) OSError propagation and (b) standard re-run idempotency — NOT recovery from a detectable mid-swap mixed-generation state, which is what its name claims. NOTE: the cycle-4 structural defect (monkeypatch firing during staging writes) IS genuinely fixed by the `_commit_staging` boundary extraction — only the recovery test's observable claim remains flawed. Orchestrator-verified against 06-02-PLAN.md:290-359 and normalizer.py:643-653.
