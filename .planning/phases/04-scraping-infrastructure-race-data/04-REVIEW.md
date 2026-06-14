@@ -1,394 +1,370 @@
 ---
 phase: 04-scraping-infrastructure-race-data
-reviewed: 2026-06-14T11:30:00Z
-depth: deep
-files_reviewed: 9
+reviewed: 2026-06-14T14:15:00Z
+depth: standard
+files_reviewed: 7
 files_reviewed_list:
-  - src/scraper/__init__.py
-  - src/scraper/course_codes.py
   - src/scraper/enumeration.py
-  - src/scraper/fetcher.py
   - src/scraper/flag_crosswalk.py
-  - src/scraper/models.py
-  - src/scraper/normalizer.py
-  - src/scraper/orchestrator.py
   - src/scraper/parser.py
+  - tests/scraper/fixtures/html/calendar_202306.html
+  - tests/scraper/test_end_to_end.py
+  - tests/scraper/test_enumeration.py
+  - tests/scraper/test_parser.py
 findings:
   critical: 2
-  warning: 7
-  info: 4
-  total: 13
+  warning: 4
+  info: 3
+  total: 9
 status: issues_found
 ---
 
-# Phase 04: Code Review Report (DEEP)
+# Phase 04: Code Review Report (Gap-Closure — Plans 04-07 / 04-08)
 
-**Reviewed:** 2026-06-14T11:30:00Z
-**Depth:** deep
-**Files Reviewed:** 9 production source files + 8 test files + 5 HTML fixtures + 4 cross-reference schemas
+**Reviewed:** 2026-06-14T14:15:00Z
+**Depth:** standard
+**Files Reviewed:** 7
 **Status:** issues_found
 
 ## Summary
 
-Deep cross-file review of the netkeiba scraping infrastructure (9 `src/scraper/*.py` files, ~2.7k LOC), tracing the full pipeline `enumerate_races -> fetch_race_html -> parse_race_html -> normalize_to_parquet` and the `run_scrape` orchestration. Cross-referenced against `src/pipeline/column_mapping.py`, `src/schemas/{race,entry,result}.py`, and 5 golden HTML fixtures to verify the standard-layer dtype/schema contract and the Phase-6 Kaggle join compatibility.
+This review covers the two UAT-driven fixes shipped after `f01afda`:
+Plan 04-07 (UAT-Test-3, `(国際)` -> graded mapping removed; parser `grade_haystack`
+harvesting from second `<h1>`) and Plan 04-08 (UAT-Test-6, calendar URL form changed
+from `/race/calendar/{YYYYMM}/` to `/race/list/{YYYYMM}/`).
 
-**Prior standard-depth review re-verification:** Both Critical findings (CR-01 calendar regex truncation, CR-02 merge-dedup dtype swallow) **still hold** against current code. All 7 Warnings and 4 Infos re-verified and carried forward. No prior finding was resolved.
+The headline changes are directionally correct: the URL form change is
+live-verified and well-guarded by the new URL-contract test class, and removing
+the `(国際)` -> graded mapping is semantically right. However, the gap-closure
+introduces two new BLOCKER-tier issues that the planning notes did not surface
+and that the current test suite does not catch:
 
-**Deep value-add:** Confirmed the dtype-contract leak path end-to-end (CR-02 traces from `_recast_for_storage` through `write_partitioned_parquet` to the written Parquet that Phase 6 joins against Kaggle). Verified the partition-key derivation chain (`race_ref.race_date` -> `{YYYY}/{MM}` raw path -> `partition_map` -> `{YYYYMM}` standard partition) is internally consistent and has no path-traversal surface. Confirmed no post-race field (finish_position, finish_time, margin, corners, last_3f, prize_money) can reach RaceSchema/EntrySchema pre-race fields. Confirmed `popularity`/`win_odds` are correctly tagged `pre_race=False` (reserved for EV, never features).
+1. `src/scraper/flag_crosswalk.py` exports `GRADE_PATTERNS` in `__all__` but
+   never defines the symbol. `from src.scraper.flag_crosswalk import *` and
+   any direct `import GRADE_PATTERNS` raise `ImportError`/`AttributeError`. The
+   pre-existing `_GRADE_REGEX` is what the module actually uses internally.
+2. `src/scraper/parser.py` sets the `grade` field to the raw captured token,
+   which for Listed races yields `'(L)'` (parentheses included). The
+   `RaceSchema.grade` docstring expects `'G1/G2/G3/G/listed'`; Kaggle's
+   `リステッド・重賞競走` source column carries bare tokens. This is a
+   schema-consistency defect that will corrupt Phase 6 joins and
+   downstream feature columns.
 
-**Leakage posture is sound.** RaceSchema/EntrySchema carry only pre-race fields; ResultSchema cleanly isolates all post-race data. The obstacle filter (`normalize_to_parquet` lines 676-693) correctly propagates from race to entry/result tables with a `notna()` guard against the `pd.NA == "障害"` propagation trap.
-
-**Flag crosswalk is exhaustive.** Programmatically verified all 13 unique `race_flag_*` targets in `KAGGLE_COLUMN_MAP` have >=1 pattern in `FLAG_CROSSWALK` and each pattern sets its target to `True`. The Cycle-2 HIGH #2 regression guard holds (also enforced by `test_crosswalk_covers_all_kaggle_flag_targets`).
-
-**Two BLOCKER findings** (both carried from prior review, still unresolved):
-1. `parse_calendar_month_html` regex `_RACE_DAY_HREF_RE` truncates >8-digit `/race/list/{N}/` hrefs via unanchored `.search()`, silently emitting a wrong `race_day_date` (verified by direct regex test).
-2. `_recast_for_storage` swallows `(TypeError, ValueError)` on the merge-dedup path, silently breaking the strict-dtype contract (Cycle-2 HIGH #3) when a same-month re-run hits a non-coercible existing column.
-
-**Test-suite assessment:** The test suite is thorough on happy paths (5 golden fixtures, full-chain e2e, dtype-fidelity checks). However, three test-quality gaps were identified: the merge-dedup test does not exercise the dtype-swallow path (CR-02 is uncaught); the integrity-validation tests never assert that violations RAISE (WR-07 is uncaught); and the full-chain e2e pre-saves all fixture HTML, bypassing the real transport-based race fetch for the happy path (the `test_full_chain_handles_failed_fetch` test covers the None path but not a successful transport fetch without pre-save).
+Additional WARNING-level defects: `_GRADE_REGEX` in `flag_crosswalk.py` has the
+alternation order reversed relative to `parser._GRADE_TOKEN_RE`, so `GII`/`GIII`
+tokens are leftmost-matched as `GI` (currently harmless because `derive_race_flags`
+only tests for a match, but it is a latent footgun and asymmetric with the parser);
+a stale docstring in `test_parser.py:10-11` still documents the removed mapping as
+an invariant; and a misleading test comment in `test_parser.py:430` attributes
+the G1 fixture's graded_stakes=True to `(国際)` when it now comes from the
+`<h1>`-harvested GI token.
 
 ## Critical Issues
 
-### CR-01: Calendar regex silently truncates malformed race-day hrefs (carried from standard review, STILL UNRESOLVED)
+### CR-01: `GRADE_PATTERNS` exported in `__all__` but never defined — `ImportError` on star-import
 
-**File:** `src/scraper/enumeration.py:45, 87-90`
-**Status:** Carried from prior standard review. Verified still present in current code. No regression test added.
-**Issue:** `_RACE_DAY_HREF_RE = re.compile(r"/race/list/(\d{8})/?")` is applied with `.search()` on the raw href (line 87). Because the regex is not anchored to require the 8-digit segment to be the FULL digit run, a malformed href with MORE than 8 digits matches the leading 8 digits. Verified by direct regex test:
+**File:** `src/scraper/flag_crosswalk.py:210`
+**Issue:** The module's `__all__` list declares `"GRADE_PATTERNS"`, but no
+symbol of that name is defined anywhere in the file. The module's actual
+grade-detection regex is the private `_GRADE_REGEX` (line 119), and there is
+no `GRADE_PATTERNS` list (unlike `CLASS_PATTERNS` which is real).
 
+Verified empirically:
 ```
-/race/list/2022010512/   -> match group '20220105'  (10-digit href truncated)
-/race/list/20220105123/  -> match group '20220105'  (11-digit href truncated)
-/race/list/20220105xyz/  -> match group '20220105'  (8 digits + suffix)
-```
-
-The trailing `/?` matches an OPTIONAL slash but does NOT require end-of-segment, so any >8-digit numeric prefix is silently matched. The resulting `race_day_date` (e.g., `2022-01-05` for a `2022010512` href) does not correspond to the actual segment. This corrupts `RaceRef.race_date`, which is the authoritative source for:
-- The raw HTML path `{YYYY}/{MM}` (fetcher.py:297-300) -> HTML written to the wrong month directory.
-- The standard-layer partition key `{YYYYMM}` (normalizer.py:392-396) -> Parquet written to the wrong partition.
-- The Phase-6 join contract -> races silently land in a partition that does not match their calendar date.
-
-This is a data-corruption defect: the corruption is silent (no warning logged) and propagates to both the raw and standard layers.
-
-**Fix:** Anchor the regex so the captured 8-digit segment is the FULL digit run. The fix uses a trailing `(?:/|$)` to require the 8 digits be followed by a slash or end-of-string:
-```python
-# Reject any href where the digit run is not exactly 8 chars.
-_RACE_DAY_HREF_RE = re.compile(r"/race/list/(\d{8})(?:/|$)")
-```
-Verified against the test vectors:
-```
-/race/list/2022010512/   -> None  (correctly rejected)
-/race/list/20220105123/  -> None  (correctly rejected)
-/race/list/20220105/     -> '20220105'  (valid)
-/race/list/20220105      -> '20220105'  (valid, no trailing slash)
-/race/list/20220105xyz/  -> None  (correctly rejected)
-```
-Add a regression test in `tests/scraper/test_enumeration.py`:
-```python
-def test_rejects_long_digit_run_in_day_href(self) -> None:
-    """A >8-digit /race/list/ segment is dropped, NOT prefix-truncated."""
-    html = '<a href="/race/list/2022010512/">bad</a>'
-    result = parse_calendar_month_html(html)
-    assert result == [], f"expected empty, got {result}"
+>>> from src.scraper.flag_crosswalk import GRADE_PATTERNS
+ImportError: cannot import name 'GRADE_PATTERNS' from 'src.scraper.flag_crosswalk'
+>>> from src.scraper.flag_crosswalk import *
+AttributeError: module 'src.scraper.flag_crosswalk' has no attribute 'GRADE_PATTERNS'
 ```
 
-### CR-02: Merge-dedup dtype contract silently broken by `_recast_for_storage` (carried from standard review, STILL UNRESOLVED)
+The existing test suite passes only because no test performs either import —
+but this is a latent landmine: the moment any consumer (Phase 5/6 normalizer,
+downstream feature code, or an IDE auto-completion that follows `__all__`)
+attempts to use `GRADE_PATTERNS`, the module becomes un-importable. This is
+also a broken public contract: `__all__` is the documented surface, and
+advertising a non-existent symbol is a defect regardless of whether any
+current caller trips it.
 
-**File:** `src/scraper/normalizer.py:571-598`
-**Status:** Carried from prior standard review. Verified still present. No test exercises this failure path.
-**Issue:** The module docstring (lines 22-27, 222-234) and `_build_typed_dataframe` enforce strict dtypes with hard `TypeError` on coercion failure (Cycle-2 HIGH #3). But the merge-dedup path in `write_partitioned_parquet` reads an existing parquet, concats with new rows, then calls `_recast_for_storage` -- which **catches `(TypeError, ValueError)` and `pass`es** (lines 591-597):
+**Fix:** Pick one of two consistent resolutions. Either (a) remove
+`GRADE_PATTERNS` from `__all__` since the actual grade logic lives in the
+private `_GRADE_REGEX` and `derive_race_flags`, or (b) add a real public
+export that aliases the private regex (e.g. `GRADE_PATTERNS = _GRADE_REGEX`).
 
 ```python
-try:
-    out[col] = out[col].astype(target)
-except (TypeError, ValueError):
-    # Best-effort recast: leave as-is if the column cannot be coerced
-    pass
+# Option (a) — recommended; the module has no need to expose the regex
+# directly because derive_race_flags is the public API.
+__all__ = ["FLAG_CROSSWALK", "CLASS_PATTERNS", "derive_race_flags"]
 ```
 
-Deep-traced failure path: if a stale column from a prior run survives a schema change (e.g., an `object`-dtype column from an older writer, or a column where stored values are genuinely non-coercible like a `finish_position` accidentally written as `"DNF"` strings), `_recast_for_storage` silently leaves the column as-is. The merged frame is then written with whatever dtype it landed on, and the strict-dtype guarantee is violated. The written Parquet then fails to physically match the Kaggle schema that Cycle-2 #3 and Cycle-3 #1 were designed to enforce.
+### CR-02: `grade` field captures parenthesized token `'(L)'` for Listed races — schema inconsistency
 
-This is the SAME class of failure the strict path (`_build_typed_dataframe`) raises on. The merge path MUST raise equivalently -- silent best-effort here defeats the entire dtype-contract test surface. Concrete demonstration:
-```python
-df_bad = pd.DataFrame({"finish_position": ["abc", "def"]})
-df_bad["finish_position"].astype("Int64")  # raises ValueError
-# _recast_for_storage catches this -> column stays object/string
-# written parquet has finish_position as string, not Int64
+**File:** `src/scraper/parser.py:439-443`
+**Issue:** The parser extracts the `grade` field via
+`_GRADE_TOKEN_RE.search(grade_haystack)`, and `_GRADE_TOKEN_RE` includes
+`\(L\)|（L）|リステッド` as alternatives (line 116). For the Listed fixture
+`202405010809.html` (`ヒヤシンスS(L)`), the harvested grade is the literal
+string `'(L)'` — including the parentheses:
+
+Verified empirically:
+```
+>>> race = parse_race_html(Path('tests/scraper/fixtures/html/202405010809.html'))['race']
+>>> race['grade']
+'(L)'
 ```
 
-**Fix:** Propagate the exception so the existing `except Exception` wrapper at lines 551-557 catches it and falls back to writing only the new partition (which IS correctly typed):
-```python
-def _recast_for_storage(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
-    schema_map = {"race": RaceSchema, "entry": EntrySchema, "result": ResultSchema}
-    schema = schema_map.get(table_name)
-    if schema is None:
-        return df
-    dtype_map = SCHEMA_DTYPE_MAP[schema]
-    out = df.copy()
-    for col, target in dtype_map.items():
-        if col not in out.columns:
-            continue
-        try:
-            out[col] = out[col].astype(target)
-        except (TypeError, ValueError) as e:
-            raise TypeError(
-                f"_recast_for_storage: column {col!r} in {table_name!r} existing "
-                f"parquet cannot be coerced to {target!r} during merge-dedup: {e}"
-            ) from e
-    return out
-```
-The caller at lines 551-557 already wraps this in `try/except Exception` and falls back to `write_df = new_partition_df` -- that branch becomes the safety net, and the dtype contract is no longer silently broken.
+This contradicts:
+- `src/schemas/race.py:68` — `grade` field documented as
+  `"G1/G2/G3/G/listed or empty"` (bare tokens, no parens).
+- `src/pipeline/column_mapping.py:78` — Kaggle's source column for `grade` is
+  `リステッド・重賞競走`, which carries bare graded/listed tokens on the
+  Kaggle side, not parenthesized forms.
 
-Add a regression test:
+Phase 6 will join scraped 2022+ rows against Kaggle rows on (among other
+keys) the `grade` column. A scraped `'(L)'` will never equal a Kaggle `'L'`
+or `'リステッド'`, silently producing `None`/NaN on the join and corrupting
+any feature column that keys off `grade`. The Plan 04-07 docstring claims
+Phase 6 "MUST reconcile" divergences, but this one is introduced by the
+parser itself, not by a Kaggle-side mapping choice, and should be fixed at
+the source.
+
+The bug is also somewhat hidden by the G1 fixture test
+(`test_flag_crosswalk_applied_on_graded_fixture`), which only asserts the
+boolean flag and never inspects `race['grade']`. The graded-token path
+returns `'GI'` (bare, no parens), so it does not surface this issue.
+
+**Fix:** Strip surrounding parentheses from the captured token, and do not
+use the bare `リステッド` string as a grade value — normalize to `'L'` to
+match the schema's expected form. Alternatively, exclude the Listed
+alternatives from `_GRADE_TOKEN_RE` entirely (since Listed is already
+classified by `_LISTED_REGEX` inside `derive_race_flags`) and leave
+`grade=None` for non-graded races.
+
 ```python
-def test_merge_dedup_raises_on_non_coercible_existing(self, tmp_standard_dir):
-    """CR-02: a non-coercible existing column triggers fallback to new-only write."""
-    target_dir = tmp_standard_dir / "scraped" / "202201"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / "result.parquet"
-    # Write a bad existing parquet with string finish_position.
-    bad_df = pd.DataFrame({
-        "horse_race_id": ["20220105010101"], "race_id": ["202201050101"],
-        "finish_position": ["not_a_number"], "finish_note": [None],
-        "finish_time": [None], "margin": [None],
-        "corner_1": [None], "corner_2": [None], "corner_3": [None], "corner_4": [None],
-        "last_3f": [None], "prize_money": [None],
-    })
-    bad_df.to_parquet(target_path, engine="pyarrow", index=False)
-    # A subsequent write should NOT silently merge the bad dtype.
-    # It should fall back to writing the new (correctly-typed) partition only.
-    new_rows = [/* valid result row */]
-    new_df = _build_typed_dataframe(new_rows, ResultSchema)
-    written = write_partitioned_parquet("result", new_df, tmp_standard_dir,
-                                        partition_map={"202201050101": datetime.date(2022,1,5)},
-                                        primary_key="horse_race_id")
-    back = pd.read_parquet(target_path, engine="pyarrow")
-    # The bad row was dropped; only the new row survives with correct dtype.
-    assert "not_a_number" not in back["finish_position"].tolist()
-    assert str(back["finish_position"].dtype) in {"Int64", "int64"}
+# Option A: normalize the captured token.
+if grade_haystack:
+    grade_token = _GRADE_TOKEN_RE.search(grade_haystack)
+    if grade_token:
+        raw = grade_token.group(1)
+        # Strip parentheses and normalize Listed variants to bare 'L'.
+        grade = raw.strip("()（）")
+        if grade in {"L", "リステッド"}:
+            grade = "L"
+        # else keep the bare graded token (GI/GII/GIII/G1/...).
 ```
 
 ## Warnings
 
-### WR-01: `parse_race_html` trusts filename stem as `race_id` without validation (carried, STILL UNRESOLVED)
+### WR-01: `_GRADE_REGEX` alternation order is wrong — `GII`/`GIII` leftmost-match as `GI`
 
-**File:** `src/scraper/parser.py:743, 761`
-**Status:** Carried from prior review. Verified still present.
-**Issue:** `race_id = html_path.stem` (line 761) is used directly as the race dict's `race_id`, joined into every entry/result as `horse_race_id = f"{race_id}{horse_number:02d}"`. There is NO validation that this string is a 12-digit race ID. `fetcher.py:290` validates on write, but the parser is reachable directly (tests, manual use). A misnamed fixture (e.g., `foo.html`) would inject `race_id="foo"`, then `horse_race_id="foo01"` which fails `_HORSE_RACE_ID_RE.fullmatch` (line 637) and skips every row -- silently producing an empty entries/results list while still emitting a corrupt race row with `race_id="foo"`.
+**File:** `src/scraper/flag_crosswalk.py:119-122`
+**Issue:** `_GRADE_REGEX` lists alternatives in the order
+`GI|GII|GIII|G1|G2|G3|JGI|JGII|JGIII|JG1|JG2|JG3|ＧＩ|ＧＩＩ|ＧＩＩＩ`.
+Python `re` alternation returns the **first** matching alternative at a
+position, not the longest, so on the string `'GII'` it matches `'GI'`
+(verified empirically). The same applies to `'J.GII'` -> `'GI'` and
+`'GIII'` -> `'GI'`.
 
-**Fix:** Validate at parse entry point:
+By contrast, `parser._GRADE_TOKEN_RE` (line 108) correctly orders the
+alternatives longest-first (`GIII|GII|GI|...`), which is why the comment at
+`parser.py:104-107` explicitly warns about this ordering.
+
+For `derive_race_flags` this is currently harmless because the code only tests
+`if _GRADE_REGEX.search(haystack):` (any match sets graded_stakes=True) and
+never inspects the captured group. But:
+
+1. It is an inconsistency between two regexes that the comment in
+   `parser.py:104` claims are coordinated ("Delegates full classification to
+   flag_crosswalk._GRADE_REGEX").
+2. Any future caller that reads `_GRADE_REGEX.search(s).group(0)` to extract
+   a grade token will get a silently wrong result.
+3. It is the exact footgun the parser's own comment warns against.
+
+**Fix:** Reorder `_GRADE_REGEX` to longest-first, mirroring `_GRADE_TOKEN_RE`:
+
 ```python
-def parse_race_html(html_path: Path) -> Dict:
-    html_path = Path(html_path)
-    race_id = html_path.stem
-    if not re.fullmatch(r"\d{12}", race_id):
-        raise ValueError(
-            f"parse_race_html: filename stem {race_id!r} is not a 12-digit race_id "
-            f"(file={html_path})"
-        )
-    ...
-```
-
-### WR-02: Merge-dedup has no column-set equality check between existing and new partition (carried, STILL UNRESOLVED)
-
-**File:** `src/scraper/normalizer.py:537-557`
-**Status:** Carried from prior review. Verified still present. Concrete demonstration confirms the issue.
-**Issue:** When `target_path.exists()`, the code does `pd.concat([existing_df, new_partition_df])` without checking `set(existing_df.columns) == set(new_partition_df.columns)`. Concrete demonstration:
-```
-existing: race_id, race_date, stale_col (3 columns)
-new:      race_id, race_date (2 columns)
-concat -> union: race_id, race_date, stale_col (3 columns, stale_col=NaN for new rows)
-drop_duplicates(keep="last") -> keeps new rows, stale_col=NaN survives
-```
-If a prior run wrote with an older schema (extra/dropped/renamed column), concat takes the UNION of columns; the merged frame inherits stale columns with NaN for new rows. `_recast_for_storage` only iterates `SCHEMA_DTYPE_MAP` (which excludes stale columns), so the stale column survives the recast and is written to the output Parquet. The schema drift then persists across every subsequent same-month re-run, polluting the standard-layer output that Phase 6 joins against Kaggle.
-
-**Fix:** Assert column-set equality before concat, or restrict the merge to the schema columns:
-```python
-if target_path.exists():
-    existing_df = pd.read_parquet(target_path, engine="pyarrow")
-    schema_cols = list(SCHEMA_DTYPE_MAP[
-        {"race": RaceSchema, "entry": EntrySchema, "result": ResultSchema}[table_name]
-    ].keys())
-    if list(existing_df.columns) != schema_cols:
-        logger.warning(
-            f"write_partitioned_parquet({table_name!r}): existing parquet columns "
-            f"{list(existing_df.columns)} != schema columns {schema_cols}; "
-            f"writing new partition only (schema drift detected)"
-        )
-        write_df = new_partition_df
-        _atomic_write_parquet(write_df, target_path)
-        written.append(target_path)
-        continue
-    # ... existing merge logic
-```
-
-### WR-03: `validate_integrity` check "d" is set-equality, not true 1-to-1 cardinality (carried, STILL UNRESOLVED)
-
-**File:** `src/scraper/normalizer.py:308-323`
-**Status:** Carried from prior review. Verified still present.
-**Issue:** The docstring claims "entry/result `horse_race_id` are 1-to-1 (set equality)". Set equality is NOT 1-to-1 cardinality. If `entry` has 1 row with `horse_race_id="X"` and `result` has 100 rows all `"X"`, the sets are equal (`{"X"} == {"X"}`) and the check passes. The per-table uniqueness checks (b/c at lines 293-306) partially cover this, but if those checks are skipped (e.g., column missing), set-equality alone is insufficient.
-
-**Fix:** Compare multisets (Counter), which naturally subsumes set equality and uniqueness:
-```python
-from collections import Counter
-entry_hids = Counter(entry_df["horse_race_id"].dropna().tolist())
-result_hids = Counter(result_df["horse_race_id"].dropna().tolist())
-if entry_hids != result_hids:
-    msg = "horse_race_id mismatch: entry/result are not 1-to-1 (cardinality differs)"
-    violations.append(msg)
-    logger.warning(msg)
-```
-
-### WR-04: `_parse_finish_position_cell` surfaces horse-weight sentinels as `finish_note` (carried, STILL UNRESOLVED)
-
-**File:** `src/scraper/parser.py:564-566`
-**Status:** Carried from prior review. Verified still present. Note: a `logger.warning` WAS added at line 565 (the prior report said it was missing; it now exists), so this is partially mitigated but the defense-in-depth gap remains.
-**Issue:** The unknown-format branch returns `(None, cleaned)` -- preserving ANY unparseable text as the finish note. `計不` and `---` are horse-weight sentinels (see `parse_horse_weight` lines 156-162) that would never legitimately appear in a 着順 cell. If a column-header resolution error in `resolve_columns_by_header` feeds a horse-weight cell into `_parse_finish_position_cell`, the parser silently treats it as a finish note rather than failing loudly.
-
-**Fix:** Add a sanity check that warns when the surfaced note is not in a known finish-note set:
-```python
-KNOWN_FINISH_NOTES = _NULL_FINISH_NOTES | {"降"}
-if cleaned not in KNOWN_FINISH_NOTES:
-    logger.warning(
-        f"Unparseable 着順 cell {cleaned!r} is not a known finish note; "
-        f"if this looks like a horse-weight sentinel (計不/---), "
-        f"check column-header resolution."
-    )
-return (None, cleaned)
-```
-
-### WR-05: Calendar URL dedup misses trailing-slash variance (carried, STILL UNRESOLVED)
-
-**File:** `src/scraper/enumeration.py:96-101`
-**Status:** Carried from prior review. Verified still present.
-**Issue:** `parse_calendar_month_html` dedupes by `urljoin(BASE_URL, href)`. `urljoin` is href-form-preserving: `/race/list/20220105/` and `/race/list/20220105` produce DIFFERENT URLs. If the calendar page emits both forms for the same day, the day is fetched twice. Not a correctness bug (races dedup later by `race_id`), but a wasteful double-fetch on a rate-limited scraper.
-
-**Fix:** Normalize trailing slash before dedup:
-```python
-day_url = urljoin(BASE_URL, href).rstrip("/") + "/"
-if day_url in seen_urls:
-    continue
-seen_urls.add(day_url)
-```
-
-### WR-06: `EntrySchema.popularity` annotation drifts from its normalizer dtype (carried, STILL UNRESOLVED)
-
-**File:** `src/schemas/entry.py:116-120` vs `src/scraper/normalizer.py:166`
-**Status:** Carried from prior review. Verified still present.
-**Issue:** `EntrySchema.popularity` is annotated `Optional[int]`, but `SCHEMA_DTYPE_MAP[EntrySchema]["popularity"] = "Float64"` writes nullable float. Kaggle stores popularity as Arrow `double`, so the normalizer is correct for the join contract. But the Pydantic annotation lies about the runtime type. Same drift exists for `horse_weight` and `weight_change` (Pydantic `Optional[int]`, dtype map `Float64`).
-
-**Fix:** Update the Pydantic annotations to `Optional[float]`, or add a docstring note flagging the standard-layer dtype override. Given the schemas are explicitly "type definition only" per D-02, the cheaper fix is documentation:
-```python
-popularity: Optional[int] = Field(
-    default=None,
-    description=(
-        "Betting popularity rank (人気) -- post-race for feature purposes. "
-        "NOTE: standard-layer Parquet stores this as Float64 (Kaggle double); "
-        "the int annotation is for documentation only."
-    ),
-    json_schema_extra={"pre_race": False, "table": "entry"},
+_GRADE_REGEX = re.compile(
+    r"(?:GIII|GII|GI|"             # half-width: long -> short
+    r"JGIII|JGII|JGI|"
+    r"G3|G2|G1|"
+    r"JG3|JG2|JG1|"
+    r"ＧＩＩＩ|ＧＩＩ|ＧＩ)"
 )
 ```
 
-### WR-07: `validate_integrity` violations never raise even when they indicate corruption (carried, STILL UNRESOLVED)
+### WR-02: Stale docstring in `test_parser.py:10-11` documents the removed mapping as an invariant
 
-**File:** `src/scraper/normalizer.py:695-701`
-**Status:** Carried from prior review. Verified still present. Test suite confirms violations are never asserted to raise (`test_detects_duplicate_race_id` etc. only check the return value).
-**Issue:** Integrity violations (duplicate `race_id`, duplicate `horse_race_id`, orphan FKs) are logged as warnings and the output is written anyway. A duplicate `race_id` in the race table means the Phase-6 join produces ambiguous matches against Kaggle. The current behavior writes silently-corrupt Parquet and returns successfully.
+**File:** `tests/scraper/test_parser.py:10-11`
+**Issue:** The module docstring still lists the removed mapping under HIGH #6:
 
-**Fix:** For HIGH-severity violations (duplicate primary keys, FK orphans), raise:
+```
+* HIGH #6  -- flag crosswalk semantics: ``(牝)`` -> ``race_flag_filly_only``
+  (NOT ``race_flag_mare_only``); ``(国際)`` -> ``race_flag_graded_stakes``.
+```
+
+Plan 04-07 explicitly removed the `(国際)` -> `race_flag_graded_stakes`
+mapping (it is the entire point of the fix). The docstring now contradicts
+both the production code and the regression test
+`test_international_does_not_set_graded_stakes` (line 124) which asserts
+the opposite. This is a documentation defect that will mislead future
+maintainers into thinking the mapping still exists.
+
+**Fix:** Update the docstring to reflect the post-Plan-04-07 contract:
+
 ```python
-violations = validate_integrity(race_df, entry_df, result_df)
-hard_violations = [v for v in violations if "duplicate" in v or "orphan" in v]
-if hard_violations:
-    raise ValueError(
-        f"normalize_to_parquet: {len(hard_violations)} hard integrity violation(s): "
-        f"{hard_violations[:3]}"
-    )
+# tests/scraper/test_parser.py:10-11
+  * HIGH #6  -- flag crosswalk semantics: ``(牝)`` -> ``race_flag_filly_only``
+    (NOT ``race_flag_mare_only``); ``(国際)`` is intentionally NOT mapped to
+    ``race_flag_graded_stakes`` (UAT-Test-3 — see Plan 04-07).
+```
+
+### WR-03: Misleading comment in `test_parser.py:430` attributes graded_stakes to the wrong source
+
+**File:** `tests/scraper/test_parser.py:427-433`
+**Issue:** The test `test_flag_crosswalk_applied_on_graded_fixture` still carries
+the pre-Plan-04-07 comment:
+
+```python
+# 宝塚記念 smalltxt: ``(国際)(指)(定量)`` -> graded_stakes / condition_race / bonus_weight
+assert race["race_flag_graded_stakes"] is True
+```
+
+Under the new code path, `graded_stakes=True` comes from the GI token harvested
+from the second `<h1>` (`第64回宝塚記念(GI)`), NOT from `(国際)`. The
+`(国際)(指)(定量)` substring only contributes `condition_race` (via `(指)`) and
+`bonus_weight` (via `(定量)`); the comment's claim that it contributes
+`graded_stakes` is now wrong. Worse, the comment implicitly documents that
+`(国際)` still drives the graded flag, which is precisely the bug Plan 04-07
+fixed.
+
+Verified empirically: `derive_race_flags('3歳以上オープン  (国際)(指)(定量)', '')`
+returns `graded_stakes=None` — proving the GI token, not `(国際)`, is what
+sets the flag.
+
+**Fix:** Update the comment to reflect the actual source, and add a direct
+`grade` field assertion (which would have caught CR-02):
+
+```python
+def test_flag_crosswalk_applied_on_graded_fixture(self) -> None:
+    """The G1 fixture sets graded_stakes via the GI token in <h1> (Plan 04-07)."""
+    race = parse_race_html(FIXTURES_DIR / "202309030811.html")["race"]
+    # graded_stakes=True comes from the harvested <h1> GI token
+    # (第64回宝塚記念(GI)), NOT from (国際) per Plan 04-07.
+    assert race["grade"] == "GI"
+    assert race["race_flag_graded_stakes"] is True
+    assert race["race_flag_condition_race"] is True  # from (指)
+    assert race["race_flag_bonus_weight"] is True    # from (定量)
+```
+
+### WR-04: `grade_haystack` overloads the `race_name` parameter to `derive_race_flags`, leaking h1 text into flag crosswalk matching
+
+**File:** `src/scraper/parser.py:431-467`
+**Issue:** The grade-haystack harvesting logic concatenates `race_name` with
+the grade-bearing `<h1>` text:
+
+```python
+grade_haystack = race_name or ""
+for h1 in soup.find_all("h1"):
+    h1_text = h1.get_text(strip=True)
+    if h1_text and _GRADE_TOKEN_RE.search(h1_text):
+        if h1_text not in grade_haystack:
+            grade_haystack = f"{grade_haystack} {h1_text}".strip()
+        break
+...
+flags = derive_race_flags(race_condition or "", grade_haystack or "")
+```
+
+This is functionally correct for the happy path, but two concerns:
+
+1. The loop breaks on the FIRST `<h1>` containing a grade token. If the page
+   layout ever includes a third `<h1>` carrying a DIFFERENT grade token (e.g.
+   a sidebar "next race" preview), the wrong one is harvested. The 5 golden
+   fixtures happen to have exactly two `<h1>` elements (logo + race title),
+   so this does not trigger today, but it is fragile to layout drift.
+2. `grade_haystack` is passed to `derive_race_flags` as the `race_name`
+   argument (line 467), but it is actually a *concatenation* of `race_name`
+   and the h1 text. If the h1 text contains e.g. `(定量)` or other
+   flag-markers (unlikely for netkeiba's h1, but not contractually
+   impossible), those would be picked up by `FLAG_CROSSWALK` substring
+   matching and incorrectly set race flags. The current fixtures don't
+   exhibit this, but it is a latent coupling.
+
+**Fix:** Either (a) pass `race_name` (not `grade_haystack`) to
+`derive_race_flags` as the `race_name` parameter, and harvest the grade token
+from `grade_haystack` only for the `grade`/`grade_revision` fields; or (b)
+restrict the `<h1>` search to the page's main content area
+(e.g. `soup.select_one("main h1")` or `soup.find("div", class_="race_main")`)
+to avoid accidentally harvesting sidebar/header tokens.
+
+```python
+# Option (a) — cleaner separation of concerns.
+flags = derive_race_flags(race_condition or "", race_name or "")
+# grade / grade_revision use grade_haystack (which includes the h1 text).
 ```
 
 ## Info
 
-### IN-01: `_GRADE_REGEX` in `flag_crosswalk.py` has redundant alternatives (carried, STILL PRESENT)
+### IN-01: `derive_race_flags` haystack excludes `race_name` when `race_condition` is empty
 
-**File:** `src/scraper/flag_crosswalk.py:98-101`
-**Status:** Carried. Verified still present.
-**Issue:** The regex includes both `JGI|JGII|JGIII` AND `JG1|JG2|JG3` AND full-width forms. Because it's used only for boolean flag derivation (any match -> `graded_stakes=True`), and `GI` alone matches as a substring of `JGI`, the explicit `JG*` alternatives are redundant for the boolean purpose. Verified: `'JGIII' -> matched: 'JGI'` (substring match), but the boolean result is correct either way. Not harmful, but adds maintenance noise.
-
-**Fix:** Add a comment clarifying `_GRADE_REGEX` is for boolean detection only, or simplify to `GI|GII|GIII|ＧＩ|ＧＩＩ|ＧＩＩＩ` since the JG variants are subsumed.
-
-### IN-02: `FetcherSession.__exit__` swallows all cleanup exceptions silently (carried, STILL PRESENT)
-
-**File:** `src/scraper/fetcher.py:120-149`
-**Status:** Carried. Verified still present.
-**Issue:** Every cleanup step (`page.close()`, `context.close()`, `browser.close()`, `_pw.stop()`) is wrapped in bare `except Exception: pass`. Intentional (cleanup-must-not-throw), but a Playwright/Chromium process leak during teardown is invisible. On macOS, an orphaned Chromium process is recoverable, but in a long-running batch it could exhaust resources.
-
-**Fix:** Log at DEBUG level:
+**File:** `src/scraper/flag_crosswalk.py:195`
+**Issue:** The haystack is built as:
 ```python
-try:
-    self._browser.close()
-except Exception as e:
-    logger.debug(f"FetcherSession.__exit__: browser.close() failed: {e!r}")
+haystack = f"{race_condition} {race_name}" if race_name else race_condition
+```
+This is correct, but note that if `race_condition` is empty (e.g. a misparsed
+page where `smalltxt` is missing), `haystack` becomes `""` even when
+`race_name` is set. In that case `重賞` in the race name would not be detected.
+Not a current bug (condition is non-empty on all fixtures), but a latent edge
+case worth a guard.
+
+**Fix:** Build the haystack unconditionally:
+```python
+haystack = f"{race_condition or ''} {race_name or ''}".strip()
+if not haystack:
+    return flags
 ```
 
-### IN-03: `fetch_with_retry` comment says "Exponential backoff" but the formula is linear (carried, STILL PRESENT)
+### IN-02: `_GRADE_TOKEN_RE` matching `リステッド` would carry the bare CJK string into `grade`
 
-**File:** `src/scraper/fetcher.py:203-205`
-**Status:** Carried. Verified still present.
-**Issue:** The comment says "Exponential backoff: base RATE_LIMIT_SECONDS * (attempt + 2)". This is LINEAR backoff (constant additive increase: 2*base, 3*base, 4*base), not exponential (which would be base * 2^attempt). Not a bug -- the behavior is intentional and benign -- but the comment misnames it.
+**File:** `src/scraper/parser.py:115`
+**Issue:** The regex alternative `リステッド` would, if matched, set
+`grade='リステッド'` — a CJK string inconsistent with the schema's
+`'G1/G2/G3/G/listed'` documented form. This compounds CR-02: even after
+stripping parentheses, `リステッド` would need normalization to `'L'`.
 
-**Fix:** Rename to "linear backoff":
+**Fix:** See CR-02 fix (normalize Listed variants to bare `'L'`).
+
+### IN-03: `test_parser.py` does not assert the `grade` field value on any fixture
+
+**File:** `tests/scraper/test_parser.py` (whole file)
+**Issue:** No test currently asserts the `grade` field's value for any fixture.
+The boolean `race_flag_graded_stakes` is asserted (line 431), but `grade`
+itself is unverified. This is why CR-02 (`'(L)'`) and the half-width pipe
+title-split edge cases go undetected.
+
+**Fix:** Add parametrized assertions over the 5 golden fixtures for the
+expected `grade` value (`'GI'` for 宝塚記念, `'L'`-normalized for
+ヒヤシンスS, `None` for the ungraded fixtures).
+
 ```python
-# Linear backoff: base * (attempt + 2).
-# attempt 0 -> 2*base, attempt 1 -> 3*base, attempt 2 -> 4*base.
+@pytest.mark.parametrize(
+    "race_id, expected_grade",
+    [
+        ("202206050509", None),   # ひいらぎ賞
+        ("202309030811", "GI"),   # 宝塚記念
+        ("202405010809", "L"),    # ヒヤシンスS (after CR-02 fix)
+        ("202206050508", None),
+        ("202209060504", None),
+    ],
+)
+def test_grade_field_extracted(self, race_id: str, expected_grade) -> None:
+    race = parse_race_html(FIXTURES_DIR / f"{race_id}.html")["race"]
+    assert race["grade"] == expected_grade, (
+        f"{race_id}: expected grade {expected_grade!r}, got {race['grade']!r}"
+    )
 ```
-
-### IN-04: `_RACE_HREF_RE` matches any-digit race IDs by design (carried, DOCUMENTATION ONLY)
-
-**File:** `src/scraper/enumeration.py:54`
-**Status:** Carried. Verified still present and intentional.
-**Issue:** `_RACE_HREF_RE = re.compile(r"/race/(\d+)/?")` deliberately captures any-length digit run so malformed IDs "enter the validation branch" (per comment lines 47-53). This is by design -- `_RACE_ID_RE.fullmatch` at line 138 then rejects non-12-digit values. The regex is greedy: for a href like `/race/123456789012/results/`, the trailing `/?` allows either a slash or end-of-string, so it matches `123456789012`. Not a bug.
-
-**Fix:** No code change needed. Add a test fixture for the `/race/{12digit}/results/` href shape if defensive coverage is desired.
 
 ---
 
-## Deep Cross-File Analysis (NEW context not in prior review)
-
-### Data-flow tracing: `race_id` / `horse_race_id` / partition keys
-
-Traced the full key-derivation chain across all 9 files:
-
-1. **`race_id` (12-digit):** `parse_race_day_html` (enumeration.py:137) -> `RaceRef.race_id` -> `fetch_race_html` (fetcher.py:290, validated) -> filename stem -> `parse_race_html` (parser.py:761, NOT validated -- see WR-01) -> `race["race_id"]` -> `_build_typed_dataframe` (normalizer.py:235) -> `race_df["race_id"]` (string dtype) -> `partition_map` key. **Gap:** WR-01 (parser does not validate stem).
-
-2. **`horse_race_id` (14-digit):** `parse_race_html` -> `f"{race_id}{horse_number:02d}"` (parser.py:636) -> `_HORSE_RACE_ID_RE.fullmatch` (parser.py:637, validated) -> `entry["horse_race_id"]` / `result["horse_race_id"]`. **Sound:** validation present at construction.
-
-3. **`race_day_date` -> raw path `{YYYY}/{MM}`:** `parse_calendar_month_html` (enumeration.py:92) -> `RaceRef.race_date` -> `fetch_race_html` (fetcher.py:297-298) -> `out_dir = raw_dir / year / month`. **Gap:** CR-01 (date can be corrupted by regex truncation upstream).
-
-4. **`race_date` -> partition key `{YYYYMM}`:** `normalize_to_parquet` -> `partition_map[race_id] = parsed_date` (normalizer.py:713) -> `write_partitioned_parquet` -> `_partition_key_from_date` (normalizer.py:396). **Sound** (given CR-01 is fixed upstream).
-
-**Path-traversal analysis:** `race_id` is validated as `\d{12}` (fetcher.py:290) before path construction, so no `../` injection is possible. `race_date` is a `datetime.date` (typed dataclass field), so `year`/`month` are bounded ints. No SSRF/path-traversal surface found in the filesystem path derivation. The outbound HTTPS URL `f"https://db.netkeiba.com/race/{race_ref.race_id}/"` (fetcher.py:308) is also bounded by the 12-digit validation. **No security vulnerability found.**
-
-### Schema/dtype contract verification
-
-Verified `SCHEMA_DTYPE_MAP` (normalizer.py:94-191) against `RaceSchema`/`EntrySchema`/`ResultSchema` field sets:
-- All 3 schemas' `model_fields` keys exactly match their `SCHEMA_DTYPE_MAP` entries (also enforced by `test_dtype_map_covers_all_schema_fields`).
-- `finish_position` -> `Int64` (Cycle-2 #3). Corner columns -> `Float64` (Cycle-3 #1). `popularity` -> `Float64` (matches Kaggle double). All correct.
-- **Leakage check:** No post-race field (`finish_position`, `finish_time`, `margin`, `corner_1..4`, `last_3f`, `prize_money`) appears in `RaceSchema` or `EntrySchema`. `popularity`/`win_odds` are in `EntrySchema` with `pre_race=False` (correctly reserved for EV). **No leakage.**
-
-### Concurrency/lifecycle
-
-- `FetcherSession` is a context manager with nested try/finally in `__exit__` (fetcher.py:120-149). A partial `__enter__` failure (e.g., `new_page()` raises after `sync_playwright().start()`) is handled: `self._page` is None -> skip `page.close()`; `self._pw` is not None -> `_pw.stop()` runs. **Sound.**
-- `run_scrape` live mode opens exactly ONE `FetcherSession` per run (orchestrator.py:133), shared across enumeration and race fetching via `make_fetch_html_callable`. Verified by `test_single_session_per_run`. **Sound.**
-- Exception flow when `fetch_race_html` returns None: `_fetch_and_parse` logs and continues (orchestrator.py:208-213). Other races proceed. Verified by `test_skips_failed_fetch` and `test_full_chain_handles_failed_fetch`. **Sound.**
-
-### Test-suite gaps (NEW deep observations)
-
-1. **CR-02 uncaught:** `test_same_month_merge_dedup_preserves_sentinel` (test_normalizer.py:586-620) pre-seeds a CORRECTLY-TYPED sentinel. No test seeds a non-coercible existing column to exercise the `_recast_for_storage` swallow path. The dtype contract can be silently broken without any test failing.
-
-2. **WR-07 uncaught:** Integrity tests (`test_detects_duplicate_race_id` etc.) only assert that violations appear in the return value. No test asserts that `normalize_to_parquet` RAISES on hard violations. The "caller decides" contract has no caller that decides.
-
-3. **Full-chain e2e happy path bypasses transport:** `test_full_chain_end_to_end` (test_end_to_end.py:275-369) pre-saves all fixture HTML via `_presave_fixture_raw_html`, so `fetch_race_html`'s SCRP-05 dedup short-circuits BEFORE the transport is consulted. The only test that exercises the transport for race fetching is `test_full_chain_handles_failed_fetch` (None path). A successful transport-based race fetch (without pre-save) is untested. This means a bug in the `fetch_callable` success path (e.g., `detect_block_page` rejecting valid transport HTML) could go undetected.
-
----
-
-_Reviewed: 2026-06-14T11:30:00Z_
+_Reviewed: 2026-06-14T14:15:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
-_Depth: deep_
+_Depth: standard_
