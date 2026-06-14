@@ -75,6 +75,14 @@ _RACE_HREF_RE = re.compile(r"/race/(\d+)/?")
 # value (shorter, longer, or non-numeric) is rejected.
 _RACE_ID_RE = re.compile(r"\d{12}")
 
+# JRA central race place codes -- race_id digits 5-6 (the PP in YYYYPPCCDDRR).
+# JRA central has exactly 10 tracks (01 札幌 ... 10 小倉). NAR (地方競馬) tracks
+# use higher codes (e.g. 35 = 盛岡). The project is JRA-only (CLAUDE.md), so
+# parse_race_day_html drops any race whose place code is outside 01-10 BEFORE
+# it reaches the fetcher -- cutting roughly half the races (and requests) that
+# netkeiba's db-site day pages surface (JRA + NAR combined).
+_JRA_PLACE_CODES: frozenset[str] = frozenset(f"{n:02d}" for n in range(1, 11))
+
 
 def parse_calendar_month_html(html: str) -> list[tuple[str, datetime.date]]:
     """Parse a monthly netkeiba calendar page into absolute day URLs.
@@ -151,6 +159,8 @@ def parse_race_day_html(html: str, race_day_date: datetime.date) -> list[RaceRef
     -------
     list[RaceRef]
         Possibly empty. Malformed race_ids are logged and dropped (T-04-03).
+        Non-JRA (NAR / 地方競馬) race_ids are dropped by place code
+        (CLAUDE.md: JRA-only). JRA central place codes are 01-10.
     """
     soup = BeautifulSoup(html, features="lxml")
     refs: list[RaceRef] = []
@@ -164,6 +174,16 @@ def parse_race_day_html(html: str, race_day_date: datetime.date) -> list[RaceRef
         race_id = match.group(1)
         if not _RACE_ID_RE.fullmatch(race_id):
             logger.warning(f"Dropping malformed race_id: {race_id!r}")
+            continue
+        # JRA-only filter (CLAUDE.md): drop NAR (地方競馬) races by place code
+        # (race_id[4:6]) before they reach the fetcher. race_id is guaranteed
+        # 12 digits here (fullmatch above), so the slice is safe. DEBUG (not
+        # WARNING): NAR races are expected on netkeiba day pages, not anomalous.
+        if race_id[4:6] not in _JRA_PLACE_CODES:
+            logger.debug(
+                f"Dropping non-JRA race_id {race_id!r} "
+                f"(place_code={race_id[4:6]} outside JRA 01-10)"
+            )
             continue
         if race_id in seen_ids:
             continue

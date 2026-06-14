@@ -11,10 +11,8 @@ implicitly enforces Cycle-2 #1 across the whole suite.
 import datetime
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import urljoin
-
-import pytest
 
 from src.scraper.enumeration import (
     BASE_URL,
@@ -27,15 +25,13 @@ from src.scraper.enumeration import (
 from src.scraper.models import RaceRef
 
 
-def _make_fake_fetch(table: dict[str, str]) -> "Callable[[str], Optional[str]]":
+def _make_fake_fetch(table: dict[str, str]) -> Callable[[str], Optional[str]]:
     """Return a fetch_html callable backed by an absolute-URL -> HTML dict.
 
     Unknown URLs return None (mirrors the real fetcher's failure contract).
     Recording every URL seen lets tests assert which absolute URL was hit.
     """
     seen: list[str] = []
-
-    from typing import Callable
 
     def fake(url: str) -> Optional[str]:
         seen.append(url)
@@ -209,6 +205,25 @@ class TestParseRaceDayHtml:
         assert any("malformed" in m.lower() or "race_id" in m.lower() for m in captured), \
             captured
 
+    def test_drops_nar_races_keeps_jra_only(self) -> None:
+        """JRA-only filter (CLAUDE.md): NAR place codes (e.g. 35=盛岡) are dropped.
+
+        race_id PP is digits 5-6; JRA central is 01-10. A NAR race_id must NOT
+        become a RaceRef -- otherwise it is fetched (wasting a rate-limited
+        request on a race the project does not model) and pollutes course_code
+        with None at parse time.
+        """
+        html = (
+            '<a href="/race/202205010401/">JRA 東京</a>'   # PP=05 JRA
+            '<a href="/race/202135080801/">NAR 盛岡</a>'   # PP=35 NAR
+            '<a href="/race/202209020601/">JRA 阪神</a>'   # PP=09 JRA
+        )
+        refs = parse_race_day_html(html, datetime.date(2022, 5, 1))
+        assert {r.race_id for r in refs} == {"202205010401", "202209020601"}
+        # No NAR race leaked through.
+        jra_codes = {f"{n:02d}" for n in range(1, 11)}
+        assert all(r.race_id[4:6] in jra_codes for r in refs), refs
+
 
 class TestEnumerateRaces:
     """enumerate_races + enumerate_races_for_day: 3-level traversal."""
@@ -316,11 +331,10 @@ class TestEnumerateRaces:
         calendar_url = urljoin(BASE_URL, "/race/list/202201/")
         calendar_html = self._calendar_html("20220105", "20220109")
         ok_day_url = urljoin(BASE_URL, "/race/list/20220105/")
-        bad_day_url = urljoin(BASE_URL, "/race/list/20220109/")
         table = {
             calendar_url: calendar_html,
             ok_day_url: self._race_day_html("202201050101"),
-            # bad_day_url intentionally absent -> fake returns None
+            # /race/list/20220109/ intentionally absent -> fake returns None
         }
         fake = _make_fake_fetch(table)
 
