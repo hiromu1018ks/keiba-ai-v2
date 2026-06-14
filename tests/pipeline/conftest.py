@@ -520,6 +520,143 @@ def tmp_feature_dir(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Phase 6 Plan 06-02 integration fixtures (HIGH #5 separate input path)
+# ---------------------------------------------------------------------------
+
+
+def _reindex_to_schema(df: pd.DataFrame, schema: type) -> pd.DataFrame:
+    """Reindex a sample DataFrame to ``list(schema.model_fields.keys())``.
+
+    Sample fixtures (sample_standard_*) carry only the human-readable subset of
+    schema columns; integration needs ALL schema columns in canonical order so
+    the reindex-then-concat pipeline works the same way against synthetic test
+    data as it does against the real corpora.
+    """
+    cols = list(schema.model_fields.keys())
+    return df.reindex(columns=cols)
+
+
+@pytest.fixture
+def tmp_kaggle_input_dir(
+    tmp_path: Path,
+    sample_standard_race_df: pd.DataFrame,
+    sample_standard_entry_df: pd.DataFrame,
+    sample_standard_result_df: pd.DataFrame,
+) -> Path:
+    """Create the SEPARATE Kaggle input path (HIGH #5).
+
+    Writes one tiny synthetic Parquet per table at::
+
+        tmp_path/data/standard/kaggle/{race,entry,result}.parquet
+
+    This path is DISTINCT from the integration output path
+    (``tmp_path/data/standard/{race,entry,result}.parquet``) and is never read
+    by ``integrate_standard_layer`` as its own output -- it is the stable,
+    idempotent Kaggle input that survives repeated invocations.
+    """
+    from src.schemas.entry import EntrySchema
+    from src.schemas.race import RaceSchema
+    from src.schemas.result import ResultSchema
+
+    kaggle_dir = tmp_path / "data" / "standard" / "kaggle"
+    kaggle_dir.mkdir(parents=True, exist_ok=True)
+
+    for df, schema, name in (
+        (sample_standard_race_df, RaceSchema, "race"),
+        (sample_standard_entry_df, EntrySchema, "entry"),
+        (sample_standard_result_df, ResultSchema, "result"),
+    ):
+        reindexed = _reindex_to_schema(df, schema)
+        reindexed.to_parquet(
+            kaggle_dir / f"{name}.parquet", engine="pyarrow", index=False
+        )
+
+    return kaggle_dir
+
+
+@pytest.fixture
+def tmp_scraped_partitions_dir(
+    tmp_path: Path,
+    sample_standard_race_df: pd.DataFrame,
+    sample_standard_entry_df: pd.DataFrame,
+    sample_standard_result_df: pd.DataFrame,
+) -> Path:
+    """Create synthetic scraped month-partitioned Parquet (mirrors Phase 4 layout).
+
+    Writes two partitions (202301, 202302) under::
+
+        tmp_path/data/standard/scraped/{YYYYMM}/{race,entry,result}.parquet
+
+    The races in the sample fixtures use 2015-era race_ids, so these scraped
+    partitions are NON-OVERLAPPING with Kaggle by race_id (HIGH #5 idempotency
+    boundary). Each per-table Parquet is reindexed to canonical schema order so
+    the integration read+reindex+concat pipeline is exercised end-to-end.
+    """
+    from src.schemas.entry import EntrySchema
+    from src.schemas.race import RaceSchema
+    from src.schemas.result import ResultSchema
+
+    standard_dir = tmp_path / "data" / "standard"
+    scraped_root = standard_dir / "scraped"
+
+    # Build two distinct synthetic scraped months. Each month has 1 race with
+    # 2 entries/results so PKs are globally unique across months and the
+    # union of partition PK-sets == output unique PK count (MEDIUM #20).
+    month_blocks = [
+        (
+            "202301",
+            {
+                "race_id": "202301030101",
+                "horse_race_ids": ["20230103010101", "20230103010102"],
+            },
+        ),
+        (
+            "202302",
+            {
+                "race_id": "202302040101",
+                "horse_race_ids": ["20230204010101", "20230204010102"],
+            },
+        ),
+    ]
+
+    for month, spec in month_blocks:
+        month_dir = scraped_root / month
+        month_dir.mkdir(parents=True, exist_ok=True)
+
+        race_id = spec["race_id"]
+        hids = spec["horse_race_ids"]
+
+        # Race: 1 row (template off sample, override keys).
+        race_row = sample_standard_race_df.iloc[[0]].copy()
+        race_row["race_id"] = race_id
+        race_row["race_date"] = f"{month[:4]}-{month[4:6]}-03" if month == "202301" else f"{month[:4]}-{month[4:6]}-04"
+        race_reindexed = _reindex_to_schema(race_row, RaceSchema)
+        race_reindexed.to_parquet(
+            month_dir / "race.parquet", engine="pyarrow", index=False
+        )
+
+        # Entry: 2 rows.
+        entry_rows = sample_standard_entry_df.iloc[[0, 1]].copy()
+        entry_rows["horse_race_id"] = hids
+        entry_rows["race_id"] = race_id
+        entry_reindexed = _reindex_to_schema(entry_rows, EntrySchema)
+        entry_reindexed.to_parquet(
+            month_dir / "entry.parquet", engine="pyarrow", index=False
+        )
+
+        # Result: 2 rows, same horse_race_ids (1-to-1).
+        result_rows = sample_standard_result_df.iloc[[0, 1]].copy()
+        result_rows["horse_race_id"] = hids
+        result_rows["race_id"] = race_id
+        result_reindexed = _reindex_to_schema(result_rows, ResultSchema)
+        result_reindexed.to_parquet(
+            month_dir / "result.parquet", engine="pyarrow", index=False
+        )
+
+    return scraped_root
+
+
+# ---------------------------------------------------------------------------
 # Lag feature fixtures (Plan 03-03)
 # ---------------------------------------------------------------------------
 
