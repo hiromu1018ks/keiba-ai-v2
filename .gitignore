@@ -20,3 +20,9 @@ venv/
 
 # Data files (large, not versioned)
 data/
+
+# GSD transient caches
+.planning/research/.cache/
+
+# Playwright MCP tool output (page snapshots, console logs)
+.playwright-mcp/
