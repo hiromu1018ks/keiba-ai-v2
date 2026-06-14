@@ -136,6 +136,13 @@ _PASSING_SPLIT_RE = re.compile(r"[-－―]")
 # 降 (demoted) is NOT in this set -- it keeps the position and just records the note.
 _NULL_FINISH_NOTES = {"中", "取", "失", "除", "再"}
 
+# WR-04: the complete set of legitimately-expected finish notes. Used by the
+# unknown-format branch of _parse_finish_position_cell as a defense-in-depth
+# sanity check: if a surfaced finish_note is NOT in this set, it likely
+# indicates a column-header resolution error feeding a non-着順 cell (e.g. a
+# horse-weight sentinel like 計不 / ---) into the finish-position parser.
+_KNOWN_FINISH_NOTES: frozenset[str] = frozenset(_NULL_FINISH_NOTES | {"降"})
+
 
 # ---------------------------------------------------------------------------
 # Public functions
@@ -563,6 +570,16 @@ def _parse_finish_position_cell(
 
     # Unknown format -- surface as a note, drop position.
     logger.warning(f"Unparseable 着順 cell: {cleaned!r}; dropping finish_position")
+    # WR-04 defense-in-depth: if the surfaced note is NOT a known finish note,
+    # it likely indicates a column-header resolution error feeding a non-着順
+    # cell (e.g. a horse-weight sentinel like 計不 / ---) into this parser.
+    # Surface it explicitly so a header-resolution bug is visible.
+    if cleaned not in _KNOWN_FINISH_NOTES:
+        logger.warning(
+            f"Surfaced finish_note {cleaned!r} is not a known finish note "
+            f"({_KNOWN_FINISH_NOTES}); if this looks like a horse-weight "
+            f"sentinel (計不/---), check column-header resolution."
+        )
     return (None, cleaned)
 
 
