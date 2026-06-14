@@ -139,6 +139,12 @@ None yet.
 |----------|------|--------|-------------|
 | *(none)* | | | |
 
+## Quick Tasks Completed
+
+| Date | Slug | Summary |
+|------|------|---------|
+| 2026-06-14 | add-click-cli-wrapper-for-run-scrape-scr | click 8.x CLI (`keiba` console-script) wrapping `run_scrape` — `scrape` (live) + `status` (parquet aggregation) subcommands. Note: used `[project.scripts]` (PEP621/setuptools) not spec's `[tool.poetry.scripts]`. |
+
 ## Session Continuity
 
 Last session: 2026-06-14T05:03:25.215Z

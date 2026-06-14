@@ -13,7 +13,11 @@ dependencies = [
     "playwright>=1.49",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
+    "click>=8,<9",
 ]
+
+[project.scripts]
+keiba = "src.cli:main"
 
 [project.optional-dependencies]
 dev = [
