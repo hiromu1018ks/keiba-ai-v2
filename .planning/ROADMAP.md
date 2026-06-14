@@ -189,12 +189,20 @@ Plans:
   2. Schema is identical across the full date range (Kaggle-origin and scraped-origin rows are indistinguishable in the standard layer)
   3. Row counts and date coverage can be verified: the combined dataset spans 2015-01-01 through 2024-12-31 with expected volume
 
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01: D-01 `(国際)` mapping removal + D-02 Kaggle Parquet nullable-dtype regen + Phase 2 re-verification (DATA-05)
+
+**Wave 2** *(blocked on 06-01)*
+
+- [ ] 06-02: src/pipeline/integration.py + tests/pipeline/test_integration.py (8 DATA-05 tests) (DATA-05)
+
+**Wave 3** *(blocked on 06-01, 06-02)*
+
+- [ ] 06-03: Invoke integrate_standard_layer() on real corpus + verify 3 success criteria + human inspection gate (DATA-05)
 
 ### Phase 7: Model A -- Top-3 Probability
 
@@ -287,7 +295,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 3. Feature Engineering | 5/5 | Complete | 2026-06-12 |
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
-| 6. Data Integration | 0/? | Not started | - |
+| 6. Data Integration | 0/3 | Planned | - |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
