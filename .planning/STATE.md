@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration"
-last_updated: "2026-06-14T13:41:46.277Z"
-last_activity: "2026-06-14 - Completed 06-01: Kaggle D-01 (国際)->graded removal + D-02 nullable dtype regen to data/standard/kaggle/ subdir"
+stopped_at: Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration
+last_updated: "2026-06-14T14:07:01.760Z"
+last_activity: 2026-06-14 -- Phase 06 execution started
 progress:
   total_phases: 10
   completed_phases: 4
   total_plans: 24
   completed_plans: 23
-  percent: 42
+  percent: 40
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 06 — data-integration (06-01 complete; 06-02 next)
+**Current focus:** Phase 06 — data-integration
 
 ## Current Position
 
-Phase: 6
-Plan: 06-02 (next)
-Status: 06-01 complete; ready for 06-02 integration
-Last activity: 2026-06-14 - Completed 06-01: Kaggle D-01 (国際)->graded removal + D-02 nullable dtype regen to data/standard/kaggle/ subdir
+Phase: 06 (data-integration) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-06-14 -- Phase 06 execution started
 
 Progress: [████░░░░░░] 42%
 
@@ -72,6 +72,7 @@ Progress: [████░░░░░░] 42%
 | Phase 04 P07 | 371 | 2 tasks | 3 files |
 | Phase 04 P08 | 223 | 3 tasks | 4 files |
 | Phase 06 P01 | 846 | 3 tasks | 4 files |
+| Phase 06 P02 | 777 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -130,6 +131,9 @@ Recent decisions affecting current work:
 - [Phase 06 P01]: HIGH #2 cycle-3 resolved — convert(core_tables_subdir='kaggle') SKIPS odds/payoff writes entirely (not to root, subdir, or anywhere). Phase 5 seed at data/standard/{odds_trifecta,payoff}.parquet SHA-256 verified identical pre/post regen.
 - [Phase 06 P01]: HIGH #3 cycle-3 resolved — 06-01-T3 does NOT call run_all_validations against the 3-table kaggle/ subdir (it cannot pass — 5-table contract). 3-table-specific validation (schema column-set, Arrow dtype, grade-derivation determinism, validate_integrity on DataFrames) runs here. Full 8-point run_all_validations deferred to 06-03-T2 against unified root.
 - [Phase 06 P01]: BLOCKER-1 resolved — regenerated Kaggle race/entry/result written to data/standard/kaggle/ as a STABLE separate input path for 06-02 idempotent integration. _UNMAPPED_RACE_FLAGS expanded from 7 to 8 entries (graded_stakes added — its only text source mapping is now gone).
+- [Phase ?]: [Phase 06 P02]: HIGH #5 idempotency via kaggle_input_dir separate path (default standard_dir/kaggle) -- integration reads Kaggle from a STABLE separate input, never its own output; byte-identical re-run proven by test_integration_is_idempotent.
+- [Phase ?]: [Phase 06 P02]: HIGH #6 cycle-3 + cycle-5 -- validate-before-swap via tempfile.mkdtemp staging + DEDICATED _commit_staging swap function. Transactionality model ACCURATELY described as 'validate-before-swap with idempotent recovery' (NOT perfectly atomic; mid-swap crash recoverable via re-run since integration reads only from immutable inputs). Cycle-5 isolated test patches _commit_staging directly (NOT global os.replace) and mutates the race input to make the mixed-generation state observable.
+- [Phase ?]: [Phase 06 P02]: HIGH #8b cycle-4 production fix + cycle-5 TEST ISOLATION -- hard-violation filter extended to 'duplicate' OR 'orphan' OR 'mismatch' OR '1-to-1'. The latter two tokens are load-bearing: 'horse_race_id mismatch: entry/result are not 1-to-1' at normalizer.py:330-334 contains NEITHER 'duplicate' NOR 'orphan'. Cycle-5 test uses DISJOINT unique horse_race_ids (entry=E1/S_E, result=R1/S_R); validate_integrity returns EXACTLY ONE violation containing 'mismatch' -- proving the token is the sole classifier.
 
 ### Pending Todos
 
@@ -157,6 +161,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T13:40:08Z
+Last session: 2026-06-14T14:07:01.754Z
 Stopped at: Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration
 Resume file: .planning/phases/06-data-integration/06-01-SUMMARY.md

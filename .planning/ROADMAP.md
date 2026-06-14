@@ -198,7 +198,7 @@ Plans:
 
 **Wave 2** *(blocked on 06-01)*
 
-- [ ] 06-02: src/pipeline/integration.py (idempotent via separate kaggle_input_dir, corpus-level tmp-swap, column-set equality assert, validate_integrity-backed FK test, audit_leakage called) + tests/pipeline/test_integration.py (9 tests across TestIntegrationHermetic ungated + TestUnifiedCorpus gated) (DATA-05)
+- [x] 06-02: src/pipeline/integration.py (idempotent via separate kaggle_input_dir, corpus-level tmp-swap, column-set equality assert, validate_integrity-backed FK test, audit_leakage called) + tests/pipeline/test_integration.py (9 tests across TestIntegrationHermetic ungated + TestUnifiedCorpus gated) (DATA-05)
 
 **Wave 3** *(blocked on 06-01, 06-02)*
 
@@ -295,7 +295,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 3. Feature Engineering | 5/5 | Complete | 2026-06-12 |
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
-| 6. Data Integration | 1/3 | In Progress|  |
+| 6. Data Integration | 2/3 | In Progress|  |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
