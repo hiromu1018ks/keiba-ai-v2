@@ -17,13 +17,33 @@ extracted from ``KAGGLE_COLUMN_MAP`` and asserts each one has >=1 pattern
 in ``FLAG_CROSSWALK``. This is the mechanical diff guard Codex recommended
 (Cycle-2 HIGH #2).
 
-Compatibility note on ``(国際)`` -> ``race_flag_graded_stakes``:
-Kaggle's existing ``column_mapping.py`` maps ``レース記号/(国際)`` to
-``race_flag_graded_stakes``. Strictly speaking ``(国際)`` is an
-international-designation flag, not a graded-stakes flag. We follow the
-Kaggle mapping here for JOIN COMPATIBILITY so Phase 6 does not introduce
-a semantic split between the two data sources. A Phase 6 cleanup pass may
-revisit this classification if desired.
+Phase 6 reconciliation note on ``(国際)`` and ``race_flag_graded_stakes``:
+``(国際)`` is an INTERNATIONAL-designation marker, NOT a graded-stakes
+marker. A graded flag MUST only be True for actual graded races, which
+``GRADE_REGEX`` (GI/GII/GIII/G1/G2/G3/JG*/重賞/full-width ＧＩ...) already
+detects correctly inside ``derive_race_flags``. Mapping ``(国際)`` to
+``race_flag_graded_stakes`` was a semantic error that caused
+Listed/OP-special races carrying the ``(国際)`` substring (e.g.
+ヒヤシンスS 202405010809, a Listed race) to be misclassified as graded,
+contaminating any downstream feature that keys off the graded flag
+(UAT-Test-3, severity: major).
+
+This scraper-side module therefore INTENTIONALLY does NOT map
+``(国際)`` to ``race_flag_graded_stakes``. The Kaggle-side
+``src/pipeline/column_mapping.py`` line 68 still maps
+``レース記号/(国際)`` -> ``race_flag_graded_stakes``; that file is out
+of scope for this gap fix (it is a Kaggle-pipeline file). Phase 6 (Data
+Integration) MUST reconcile this divergence before joining the two
+sources: either remove the Kaggle-side mapping too, or introduce a new
+``race_flag_international`` column on both sides. Until Phase 6 ships,
+scraped 2022-2024 rows with ``(国際)`` but no GI token will have
+``race_flag_graded_stakes=None`` while equivalent 2015-2021 Kaggle rows
+have ``True`` — a known, documented, bounded inconsistency. The
+parametrized coverage guard
+``test_crosswalk_covers_all_kaggle_flag_targets`` in
+``tests/scraper/test_parser.py`` filters out
+``race_flag_graded_stakes`` with a citing comment so this divergence is
+machine-visible, not silent.
 
 Semantics (per Codex Review MEDIUM):
   * ``None``  = unknown / not observed in the source text. The normalizer
@@ -63,7 +83,8 @@ FLAG_CROSSWALK: List[Tuple[str, str]] = [
     ("(市)", "race_flag_allowance"),
     ("九州産馬", "race_flag_allowance"),
     ("(定量)", "race_flag_bonus_weight"),
-    ("(国際)", "race_flag_graded_stakes"),  # Kaggle-compat (see module docstring)
+    # (国際) intentionally NOT mapped to graded_stakes — see Phase 6 note in
+    # docstring (UAT-Test-3). True graded detection comes from GRADE_REGEX.
     ("(見習騎手)", "race_flag_apprentice"),  # parenthesized netkeiba form
     ("見習騎手", "race_flag_apprentice"),    # Cycle-2 #2 BARE form (column_mapping.py:66)
     ("(指)", "race_flag_condition_race"),
