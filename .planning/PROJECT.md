@@ -20,14 +20,14 @@ JRA中央競馬を対象に、三連複で期待値の高い買い目を抽出�
 - [x] 2022年以降のJRAレース・出走データをスクレイピングで収集しstandard Parquetに変換（2022-2024、Kaggleと同一スキーマ） — Validated in Phase 4: Scraping Infrastructure & Race Data
 - [x] スクレイピングパイプライン（fetch/parse/normalize分離、raw HTML先保存、重複取得回避、レートリミット強制）実装 — Validated in Phase 4 (SCRP-01/02/03/05、8 plans、UAT gap-closure + ライブ検証完了)
 - [x] Kaggle（2015-2021）とスクレイプ（2021-08..2026-05、58ヶ月）を統合した単一 corpus（race 38,009 / entry=result 534,953 行、2015-01-04..2026-05-31、重複0・スキーマ同一・PK-set union 3テーブル・odds/payoff 不変）— Validated in Phase 6: Data Integration (DATA-05; 独立直接検証で3/3 success criteria PASS。feature_generator 再生成は Phase 3 繰越、ROADMAP 2015-2024→2015-2026/5 表記は Phase 9 繰越 per D-07)
+- [x] LightGBM Model A（3着内確率）が構築済み（GroupTimeSeriesSplit race-grouped時系列CV + Isotonicキャリブレーション、holdout AUC=0.7669 / ECE=0.0062、2018-2024 train・2025-01〜2026-05 holdout、164 trees/69 features、リーク防止構造的保証）— Validated in Phase 7: Model A Top-3 Probability (MODA-01/02/04; 4/4 success criteria PASS・verify passed)
+- [x] 人気順ベースラインとの比較で確率の妥当性を確認（baseline AUC=0.8100 vs 純粋特性モデル 0.7669、D-08想定通り・参考情報・ベースライン超えは非必須ゲート）— Validated in Phase 7 (MODA-03)
 
 ### Active
 
 - [ ] Kaggleデータ（1986〜2014年）のstandard層変換（現状は2015年以降のみ対応）
 - [ ] raw・standard・featureの3層データパイプラインが構築されていること
 - [ ] 全通りの三連複オッズを取得できること
-- [ ] LightGBMで各馬の3着内確率モデルが構築できること
-- [ ] 人気順ベースラインとの比較で確率の妥当性を確認できること
 - [ ] 候補馬から三連複の組み合わせを生成しEVを計算できること
 - [ ] EVが高い買い目だけを抽出し、点数上限をかけられること
 - [ ] 時系列バックテストで回収率・的中率・ドローダウン等を検証できること
@@ -92,4 +92,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-15 after Phase 6 completion (unified 2015-2026/5 corpus, DATA-05)*
+*Last updated: 2026-06-16 after Phase 7 completion (Model A top-3 probability, MODA-01/02/03/04, holdout AUC 0.7669 / ECE 0.0062)*
