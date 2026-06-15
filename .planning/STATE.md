@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 07-04-PLAN.md (trainer: train_fold_model + collect_oof_predictions + train_final_model)"
-last_updated: "2026-06-15T15:27:31.281Z"
+last_updated: "2026-06-15T15:45:52.950Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 32
-  completed_plans: 30
+  completed_plans: 31
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 07 execution started
 
@@ -81,6 +81,7 @@ Progress: [████░░░░░░] 42%
 | Phase 07 P05 | 792 | 2 tasks | 2 files |
 | Phase 07 P06 | 533 | 2 tasks | 4 files |
 | Phase 07 P04 | 895 | 2 tasks | 3 files |
+| Phase 07 P07 | 1011 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 07 P04]: Codex HIGH #2 — len(oof_df) < len(df) is a CONTRACT (warm-up chunk 0 excluded from OOF); forcing warm-up predictions would leak into Isotonic calibration.
 - [Phase ?]: [Phase 07 P04]: Codex HIGH #5/#6 — feature_columns explicit arg + two-stage full retrain (Stage 1 best_iteration decision, Stage 2 fresh classifier on ALL rows at fixed iteration).
 - [Phase ?]: [Phase 07 P04]: Cycle-2 HIGH #1 — collect_oof_predictions forwards dates=df['race_date'] to splitter.split so per-fold temporal-order assertion always fires.
+- [Phase ?]: [Phase 07 P07]: run_train resolves effective feature_columns = config['data']['feature_columns'] MINUS drop_columns (Codex HIGH #5 + leak safety)
+- [Phase ?]: [Phase 07 P07]: metrics['oof_rows']=int(len(oof_df)) producer/consumer contract with 07-08 (Cycle-2 HIGH #3)
 
 ### Pending Todos
 
@@ -196,6 +199,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T15:27:31.275Z
+Last session: 2026-06-15T15:45:44.160Z
 Stopped at: Completed 07-04-PLAN.md (trainer: train_fold_model + collect_oof_predictions + train_final_model)
 Resume file: .planning/phases/07-model-a-top-3-probability/07-07-PLAN.md

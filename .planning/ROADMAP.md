@@ -238,7 +238,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 07-07: run_train.py orchestrator + config/phase7_model_a.yaml (feature_columns キー追加) + src/ml/__init__.py re-exports + hermetic E2E (expected_counts bypass) (MODA-01..04, Codex HIGH #2/#4/#5 fixes)
+- [x] 07-07: run_train.py orchestrator + config/phase7_model_a.yaml (feature_columns キー追加) + src/ml/__init__.py re-exports + hermetic E2E (expected_counts bypass) (MODA-01..04, Codex HIGH #2/#4/#5 fixes)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -316,7 +316,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
-| 7. Model A -- Top-3 Probability | 6/8 | In Progress|  |
+| 7. Model A -- Top-3 Probability | 7/8 | In Progress|  |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
 | 10. CLI & Reporting | 0/? | Not started | - |
