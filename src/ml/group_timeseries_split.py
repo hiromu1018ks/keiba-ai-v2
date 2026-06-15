@@ -377,6 +377,20 @@ def split_train_validation(
     inner_train_df = train_df.loc[~is_val].copy()
     inner_val_df = train_df.loc[is_val].copy()
 
+    # WR-01: guard empty inner_train. With n_val=max(1, ...) the val chunk is
+    # always >=1 race, but inner_train can still be empty when total races <=
+    # n_val (e.g. a single-race fold, or val_ratio=0.2 with <5 races). Feeding
+    # an empty frame to LightGBM's clf.fit raises a confusing ValueError deep
+    # inside the booster; fail loudly here with an actionable message instead.
+    if len(inner_train_df) == 0:
+        raise ValueError(
+            f"split_train_validation: inner_train is empty "
+            f"(total_races={len(races)}, n_val={n_val}, "
+            f"val_ratio={val_ratio}). Need at least {n_val + 1} races in "
+            f"train_df to leave a non-empty inner_train. Widening the train "
+            f"window or reducing val_ratio / n_splits will fix this."
+        )
+
     logger.debug(
         f"split_train_validation: total_races={len(races)} "
         f"inner_train_races={len(races) - n_val} inner_val_races={n_val} "
