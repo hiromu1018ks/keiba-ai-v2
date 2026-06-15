@@ -359,6 +359,20 @@ def integrate_standard_layer(
             f"columns {sorted(unexpected_entry_leak)!r} "
             f"(expected only {sorted(expected_entry_leak)!r})"
         )
+    # WR-03 (Phase 06 review): defense-in-depth — confirm the expected leaks
+    # ARE present. _assert_column_set_equality (line 279-280) is the primary
+    # guard for column presence and would catch a missing column first, but
+    # this audit is documented as the last line of defense. If a future
+    # refactor weakened the column-set equality check, a silent column drop
+    # (e.g. popularity dropped from one input source) would otherwise go
+    # undetected here. The expected leaks MUST be in the merged entry columns.
+    missing_expected = expected_entry_leak - set(merged_entry.columns)
+    if missing_expected:
+        raise ValueError(
+            f"integrate_standard_layer: entry table is MISSING expected "
+            f"post-race columns {sorted(missing_expected)!r} (silent column "
+            f"drop — popularity/win_odds must be present per Phase 1 D-03)"
+        )
 
     # ----- HIGH #6 cycle-3 + cycle-5: validate-before-swap with idempotent recovery -----
     staging_dir = Path(
