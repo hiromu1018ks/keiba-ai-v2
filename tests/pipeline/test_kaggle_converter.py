@@ -457,10 +457,15 @@ class TestGradeDetection:
     def test_kaggle_graded_derivation_matches_regex(self) -> None:
         """grade='G1' (half-width) sets graded_stakes=True via _GRADE_REGEX.
 
-        HIGH #1 cycle-3: the cycle-2 test used grade='GⅠ' (half-width G + FULL-
-        WIDTH Ⅰ U+FF21) which matched NEITHER the half-width 'GI' nor the
-        full-width 'ＧＩ' alternatives in _GRADE_REGEX and was silently
-        undetected. 'G1' matches the 'G3|G2|G1' alternation.
+        HIGH #1 cycle-3: the cycle-2 test used grade='GⅠ' (half-width G +
+        ROMAN NUMERAL ONE U+2160, NOT full-width Ⅰ U+FF21 as a stale comment
+        once claimed — U+FF21 is full-width Latin A) which matched NEITHER the
+        half-width 'GI' nor the full-width 'ＧＩ' alternatives in _GRADE_REGEX
+        and was silently undetected. 'G1' matches the 'G3|G2|G1' alternation.
+
+        WR-01 (Phase 06 review): the GⅠ/GⅡ/GⅢ (U+2160..2162) alternatives are
+        now in _GRADE_REGEX, so a scraped race name like 優駿牝(GⅠ) is detected
+        on the scraper side too (see test_grade_regex_matches_roman_numeral_form).
         """
         from src.pipeline.kaggle_converter import _apply_grade_detection
 
@@ -601,6 +606,41 @@ class TestGradeDetection:
         assert bool(out["race_flag_stakes"].iloc[0]) is True, (
             f"grade='G' should set race_flag_stakes=True (a graded stakes is a "
             f"stakes); got {out['race_flag_stakes'].iloc[0]!r}"
+        )
+
+    def test_grade_regex_matches_roman_numeral_form(self) -> None:
+        """WR-01: _GRADE_REGEX matches GⅠ/GⅡ/GⅢ (half-width G + Roman numeral).
+
+        The mixed form (half-width G U+0047 + ROMAN NUMERAL ONE U+2160 / TWO
+        U+2161 / THREE U+2162) appears in JRA official materials and some
+        scraped race names. Without the Roman-numeral alternatives, a scraped
+        race named 優駿牝(GⅠ) would be missed on the scraper side, producing
+        the same Kaggle-vs-scraped flag divergence D-01 eliminated. Kaggle
+        itself uses G1/G2/G3 so the Kaggle path is unaffected.
+        """
+        from src.scraper.flag_crosswalk import _GRADE_REGEX
+
+        # Roman numeral forms (U+2160..2162) — previously unmatched.
+        assert _GRADE_REGEX.search("GⅠ") is not None, (
+            "_GRADE_REGEX must match GⅠ (U+2160)"
+        )
+        assert _GRADE_REGEX.search("GⅡ") is not None, (
+            "_GRADE_REGEX must match GⅡ (U+2161)"
+        )
+        assert _GRADE_REGEX.search("GⅢ") is not None, (
+            "_GRADE_REGEX must match GⅢ (U+2162)"
+        )
+        # A realistic scraped race name carrying the Roman-numeral form.
+        assert _GRADE_REGEX.search("優駿牝(GⅠ)") is not None, (
+            "_GRADE_REGEX must match 優駿牝(GⅠ)"
+        )
+        # The already-covered forms still match (regression guard).
+        assert _GRADE_REGEX.search("G1") is not None
+        assert _GRADE_REGEX.search("GI") is not None
+        assert _GRADE_REGEX.search("ＧＩ") is not None
+        # Bare G alone must NOT match (CR-02 handles that in the converter).
+        assert _GRADE_REGEX.search("G") is None, (
+            "Bare 'G' must NOT match _GRADE_REGEX (handled by CR-02 bare-token pass)"
         )
 
     def test_grade_detection_preserves_existing_true(self) -> None:

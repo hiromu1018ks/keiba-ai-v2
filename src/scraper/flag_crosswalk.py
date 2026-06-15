@@ -109,9 +109,12 @@ CLASS_PATTERNS: List[Tuple["re.Pattern[str]", str]] = [
 # ---------------------------------------------------------------------------
 # _GRADE_REGEX: regex matching grade designations.
 #
-# Matches half-width (GI/GII/GIII/G1/G2/G3, JRA jump JG*) and full-width
-# (ＧＩ/ＧＩＩ/ＧＩＩＩ) forms. A match sets BOTH race_flag_graded_stakes
-# and race_flag_stakes to True (a graded stakes is by definition a stakes).
+# Matches half-width (GI/GII/GIII/G1/G2/G3, JRA jump JG*), full-width
+# (ＧＩ/ＧＩＩ/ＧＩＩＩ), and the mixed half-width-G + Roman-numeral form
+# (GⅠ/GⅡ/GⅢ — half-width G U+0047 + ROMAN NUMERAL ONE U+2160 / TWO U+2161 /
+# THREE U+2162) used in JRA official materials and some scraped race names.
+# A match sets BOTH race_flag_graded_stakes and race_flag_stakes to True
+# (a graded stakes is by definition a stakes).
 #
 # ``重賞`` substring alone (no GI/...) sets race_flag_stakes only.
 # ``(L)`` / ``(リステッド)`` sets race_flag_listed only.
@@ -120,9 +123,16 @@ CLASS_PATTERNS: List[Tuple["re.Pattern[str]", str]] = [
 # GI, etc.). Python regex alternation returns the FIRST match at a position,
 # not the longest, so ``GI|GII|GIII`` would match the ``GI`` prefix of
 # ``GII`` and silently misclassify. This mirrors parser._GRADE_TOKEN_RE.
+#
+# WR-01 (Phase 06 review): added the GⅠ/GⅡ/GⅢ (U+2160..2162) alternatives.
+# Verified the Kaggle path is unaffected (Kaggle uses G1/G2/G3, confirmed
+# against 19860105-20210731_race_result.csv), but scraped race names from
+# JRA/netkeiba can carry the Roman-numeral form and would otherwise produce
+# the same Kaggle-vs-scraped flag divergence D-01 was designed to eliminate.
 # ---------------------------------------------------------------------------
 _GRADE_REGEX = re.compile(
-    r"(?:GIII|GII|GI|"            # half-width: long -> short
+    r"(?:GⅢ|GⅡ|GⅠ|"            # half-width G + Roman numeral (U+2160..2162)
+    r"GIII|GII|GI|"            # half-width: long -> short
     r"JGIII|JGII|JGI|"
     r"G3|G2|G1|"
     r"JG3|JG2|JG1|"
