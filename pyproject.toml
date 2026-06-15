@@ -15,6 +15,10 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
     "click>=8,<9",
+    "scikit-learn>=1.9",
+    "matplotlib>=3.10",
+    "joblib>=1.4",
+    "pyyaml>=6",
 ]
 
 [project.scripts]
@@ -43,4 +47,5 @@ line-length = 100
 testpaths = ["tests"]
 markers = [
     "live: tests that issue real HTTPS requests to external sites (skipped by default; requires LIVE_SMOKE=1 and ALLOW_LIVE_NETWORK=1)",
+    "gated: tests that require the real feature corpus / RUN_GATED=1 (skipped by default; requires RUN_GATED=1)",
 ]
