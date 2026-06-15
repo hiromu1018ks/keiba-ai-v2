@@ -248,7 +248,16 @@ def convert(
         logger.warning(f"Dropped {nat_count} rows with unparseable dates")
         df = df[df["レース日付"].notna()].copy()
     df = df[df["レース日付"] >= "2015-01-01"].copy()
-    df = df[df["障害区分"] != "障害"].copy()
+    # WR-05 (Phase 06 review): NaN-safe obstacle filter. The previous form
+    # ``df['障害区分'] != '障害'`` returns True for flat races ONLY because the
+    # Kaggle CSV stores '' (empty string) for flats, so ``'' != '障害'`` is True.
+    # If a future upstream change introduced NaN (which pd.read_csv produces for
+    # truly-empty cells when dtype is not str), ``pd.NA != '障害'`` evaluates to
+    # pd.NA, which drops the row — silently losing flat races. normalizer.py:716-719
+    # handles this exact case with (== '障害') & .notna(); match that pattern here.
+    obstacle_series = df["障害区分"]
+    obstacle_mask = (obstacle_series == "障害") & obstacle_series.notna()
+    df = df[~obstacle_mask].copy()
     logger.info(f"After filtering: {len(df)} rows")
 
     # Step 3: Split into race/entry/result
