@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 07-04-PLAN.md (trainer: train_fold_model + collect_oof_predictions + train_final_model)"
-last_updated: "2026-06-15T15:45:52.950Z"
+status: verifying
+stopped_at: Completed 07-08-PLAN.md (Phase 7 phase gate PASS — holdout AUC 0.7669 / ECE 0.0062)
+last_updated: "2026-06-15T15:53:18.986Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 32
-  completed_plans: 31
-  percent: 50
+  completed_plans: 32
+  percent: 60
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-15 -- Phase 07 execution started
 
 Progress: [████░░░░░░] 42%
@@ -82,6 +82,7 @@ Progress: [████░░░░░░] 42%
 | Phase 07 P06 | 533 | 2 tasks | 4 files |
 | Phase 07 P04 | 895 | 2 tasks | 3 files |
 | Phase 07 P07 | 1011 | 3 tasks | 5 files |
+| Phase 07 P08 | 137 | 2 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,9 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 07 P04]: Cycle-2 HIGH #1 — collect_oof_predictions forwards dates=df['race_date'] to splitter.split so per-fold temporal-order assertion always fires.
 - [Phase ?]: [Phase 07 P07]: run_train resolves effective feature_columns = config['data']['feature_columns'] MINUS drop_columns (Codex HIGH #5 + leak safety)
 - [Phase ?]: [Phase 07 P07]: metrics['oof_rows']=int(len(oof_df)) producer/consumer contract with 07-08 (Cycle-2 HIGH #3)
+- [Phase ?]: Phase 07 P08 phase gate PASS: holdout AUC=0.7669 (D-07 ≥0.75 PASS) / ECE=0.0062 (D-11 <0.02 PASS). Isotonic pred_mean 0.2145 ≈ positive_rate 0.2146 (Pitfall #5 リークなし). pure-properties model が人気 baseline 0.8100 に及ばないのは D-08 通説通り
+- [Phase ?]: Phase 07 P08: D-15 全7成果物が本番 features_train.parquet（534,953行×78列）から生成・Phase 8/9 即時消費可能（model/calibrator/OOF 268,648行/holdout 66,343行/metrics/report/diagram）
+- [Phase ?]: Phase 07 P08: Codex HIGH #2/#7 + Cycle-2 HIGH #3/#4 全て実データで検証 PASS — OOF 268,648 < 322,510 / holdout retune 実施せず / oof_rows contract 完全一致 / ROADMAP criteria は LOCKED 決定と一致
 
 ### Pending Todos
 
@@ -199,6 +203,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T15:45:44.160Z
-Stopped at: Completed 07-04-PLAN.md (trainer: train_fold_model + collect_oof_predictions + train_final_model)
-Resume file: .planning/phases/07-model-a-top-3-probability/07-07-PLAN.md
+Last session: 2026-06-15T15:53:18.981Z
+Stopped at: Completed 07-08-PLAN.md (Phase 7 phase gate PASS — holdout AUC 0.7669 / ECE 0.0062)
+Resume file: None

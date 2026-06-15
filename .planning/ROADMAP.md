@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Scraping Infrastructure & Race Data** - Build fetch/parse/normalize pipeline and scrape 2022-2024 JRA race results into standard Parquet
 - [ ] **Phase 5: Trifecta Odds Scraping** - Scrape all-combination trifecta odds (up to 816 per race) for 2022-2024 and save in standard format
 - [x] **Phase 6: Data Integration** - Merge Kaggle (2015-2021) and scraped (2022-2024) datasets into a unified 2015-2024 standard Parquet corpus (completed 2026-06-15)
-- [ ] **Phase 7: Model A -- Top-3 Probability** - Build LightGBM top-3 probability model (2018-2024 train, 2025-2026/5 holdout per D-05) with race-grouped temporal CV (GroupTimeSeriesSplit), Isotonic calibration, and popularity-baseline comparison on holdout (reference-only per D-07/D-08)
+- [x] **Phase 7: Model A -- Top-3 Probability** - Build LightGBM top-3 probability model (2018-2024 train, 2025-2026/5 holdout per D-05) with race-grouped temporal CV (GroupTimeSeriesSplit), Isotonic calibration, and popularity-baseline comparison on holdout (reference-only per D-07/D-08) (completed 2026-06-15)
 - [ ] **Phase 8: EV Calculation Engine** - Compute Harville trifecta probabilities, calculate EV for all combinations, filter by threshold, enforce point caps, and mark skip races
 - [ ] **Phase 9: Walk-Forward Backtest** - Run walk-forward expanding-window backtest over 2015-2024, compute ROI/hit rate/drawdown, and produce detailed breakdowns
 - [ ] **Phase 10: CLI & Reporting** - Build Click-based CLI for all operations and CSV output for backtest results and bet candidates
@@ -242,7 +242,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 07-08: 実データ phase gate — python -m src.ml.run_train で6成果物生成 + 人間 verify（D-07 AUC目安0.75 + D-11 ECE<0.02 + holdout retune 禁止）(MODA-01..04, Codex HIGH #2/#7 fixes)
+- [x] 07-08: 実データ phase gate — python -m src.ml.run_train で6成果物生成 + 人間 verify（D-07 AUC目安0.75 + D-11 ECE<0.02 + holdout retune 禁止）(MODA-01..04, Codex HIGH #2/#7 fixes)
 
 ### Phase 8: EV Calculation Engine
 
@@ -316,7 +316,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
-| 7. Model A -- Top-3 Probability | 7/8 | In Progress|  |
+| 7. Model A -- Top-3 Probability | 8/8 | Complete   | 2026-06-15 |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
 | 10. CLI & Reporting | 0/? | Not started | - |
