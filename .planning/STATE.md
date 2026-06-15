@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 7
 Plan: Not started
-Status: Phase 06 fully delivered; unified corpus LOCKED (race=38009/entry=result=534953); next = phase-level verification then Phase 7
-Last activity: 2026-06-15
+Status: Phase 06 fully delivered; unified corpus LOCKED (race=38009/entry=result=534953); feature_generator np.select 修正 + feature 層再生成 済み（quick 260615-jdx）; next = phase-level verification then Phase 7
+Last activity: 2026-06-15 - Completed quick task 260615-jdx: feature_generator np.select fix + unified-corpus feature regen
 
 Progress: [████░░░░░░] 42%
 
@@ -164,6 +164,7 @@ yet.
 | 2026-06-14 | add-click-cli-wrapper-for-run-scrape-scr | click 8.x CLI (`keiba` console-script) wrapping `run_scrape` — `scrape` (live) + `status` (parquet aggregation) subcommands. Note: used `[project.scripts]` (PEP621/setuptools) not spec's `[tool.poetry.scripts]`. |
 | 2026-06-14 | tqdm-orchestrator-py-cli-py | tqdm 進捗バーを `run_scrape` に追加（`progress: bool = True`、`total=len(race_refs)` 切り詰め前、max_races truncate 時に `smoke N/total` postfix、`file=sys.stderr`）。`scrape` CLI に `--no-progress` フラグ追加（`progress=not no_progress` を伝達）。テスト: 既存呼び出しに `progress=False`、出力非依存テスト + フラグテスト追加。Commit 6714f87. |
 | 2026-06-14 | tqdm-enumerate-races | `enumerate_races` の月ループに tqdm 進捗バーを追加（`desc='Enumerating'`, `unit='month'`, `total=len(months)`, `file=sys.stderr`）。広範囲スクレイプ時の列挙フェーズ無出力（「止まったように見える」問題）を解消。月ループを `(year,month)` リスト化（振る舞い保存）。`run_scrape` から `progress=progress` を両呼び出しに伝達。テスト7件に `progress=False` + 出力非依存テスト追加。test_orchestrator のモックも `**kwargs` 化（Rule 1）。Commit 6960111. |
+| 2026-06-15 | 260615-jdx feature-generator-np-select-condlist-cor | feature_generator の np.select TypeError を根本修正。真因は「空 condlist」ではなく**dtype**：統一 corpus では `finish_note` が pandas nullable `string`（Phase 4 cycle-3 #1）で `==` が nullable boolean Series を生み、np.select が native bool を要求して TypeError。各 condlist を `to_numpy(dtype=bool, na_value=False)` で強制（pd.NA→False→default "finished" 枝で分類論理は非退化、TestTargetVariable 11テスト不変 + 新規 nullable 回帰テスト追加）。統一 corpus(534,953行)向けに features_train/pred を再生成（各534,953行）。feature_generator テスト全 green、フルスイート 513 passed/1 skipped/0 failed。DEFERRED-1 解消。Commits 516fa46, bcb0716. |
 
 ## Session Continuity
 
