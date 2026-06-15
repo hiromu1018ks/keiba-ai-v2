@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-02-PLAN.md (load_features data_loader)
-last_updated: "2026-06-15T14:25:45.640Z"
+stopped_at: Completed 07-05-PLAN.md (calibrator Isotonic OOF→holdout)
+last_updated: "2026-06-15T14:43:59.195Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 32
-  completed_plans: 27
+  completed_plans: 28
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 07 execution started
 
@@ -78,6 +78,7 @@ Progress: [████░░░░░░] 42%
 | Phase 07 P01 | 967 | 3 tasks | 10 files |
 | Phase 07 P02 | 955 | 2 tasks | 2 files |
 | Phase 07 P03 | 688 | 2 tasks | 2 files |
+| Phase 07 P05 | 792 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,10 @@ Recent decisions affecting current work:
 - [Phase 07 P03]: [Phase 07 P03]: GroupTimeSeriesSplit is bespoke (NOT mlxtend) per CLAUDE.md 'Use Instead' — Phase 8/9 reusable asset, no external dep. n_splits+1 date-block chunk scheme (Codex HIGH #1 fix): chunk 0 = warm-up train always in every fold's training set, so fold 0 train is non-empty. Legacy n_splits-chunk had fold 0 train = chunks[:0] = empty (structural bug).
 - [Phase 07 P03]: [Phase 07 P03]: Cycle-3 HIGH fix — chunking is date-block-aware (race_count -> unique race_date blocks). All race_ids sharing a date are an atomic block inside one chunk; a race_date can never straddle a train/val boundary. max(train_dates) < min(val_dates) is now a GENUINE INVARIANT (holds by construction), so the strict per-fold assertion NEVER raises on JRA real data (mean 30.75 races/date, zero single-race dates). Legacy race-count chunking placed >=1 of 5 inner boundaries inside a date for any 6-chunk split, halting the production 5-fold run via AssertionError.
 - [Phase 07 P03]: [Phase 07 P03]: Cycle-2 HIGH #1 fix — split(X, y, groups, dates=None) takes dates as an explicit arg so the per-fold temporal-order assertion ALWAYS fires when dates are provided (X column-presence independent). Legacy gate ('X is DataFrame with race_date column') was dead code because trainer passes X=df[feature_columns] (race_date in drop_columns). trainer.collect_oof_predictions (07-04) will pass dates=df['race_date']. Cycle-5 MEDIUM: dates=None + X-lacks-race_date raises explicit ValueError (not silent skip). Cycle-5 LOW: defensive assert each race_id maps to exactly one race_date.
+- [Phase ?]: [Phase 07 P05]: apply_calibrator signature is (iso, raw_preds) ONLY — Pitfall #5 enforced structurally (no labels parameter exists), not just by convention. test_leak_free_calibration uses inspect.signature to lock this for forward compatibility.
+- [Phase ?]: [Phase 07 P05]: load_calibrator raises FileNotFoundError (not silent None) on missing path — at Phase 8 Harville EV time, a missing calibrator must fail loud rather than return an unfitted estimator (Rule 2 missing-critical-functionality fix).
+- [Phase ?]: [Phase 07 P05]: Codex HIGH #2 (OOF = validation chunks only, warm-up excluded) is a fit_calibrator docstring CONTRACT, not a runtime assertion — len(oof_raw) < training-window check is the caller's (07-04 collect_oof_predictions) responsibility because calibrator.py cannot know the training-window row count.
+- [Phase ?]: [Phase 07 P05]: Wave 0 skeleton shipped 3 TestCalibrator tests; plan requires 4. test_save_load_roundtrip ADDED in Task 2 (not just unskipped) — covers D-15 .joblib round-trip + FileNotFoundError. _manual_ece helper kept local; canonical ECE belongs to 07-06 evaluator (no duplication).
 
 ### Pending Todos
 
@@ -181,6 +186,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T14:24:45.038Z
-Stopped at: Completed 07-02-PLAN.md (load_features data_loader)
-Resume file: .planning/phases/07-model-a-top-3-probability/07-03-PLAN.md
+Last session: 2026-06-15T14:43:59.190Z
+Stopped at: Completed 07-05-PLAN.md (calibrator Isotonic OOF→holdout)
+Resume file: .planning/phases/07-model-a-top-3-probability/07-06-PLAN.md
