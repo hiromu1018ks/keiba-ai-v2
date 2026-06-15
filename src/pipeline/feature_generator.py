@@ -600,13 +600,22 @@ def generate_target(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # Step 1: Create result_status from finish_note
-    # Check finish_note first (specific notes), then default to "finished"
+    # Check finish_note first (specific notes), then default to "finished".
+    #
+    # Each condition is coerced to a native bool ndarray via
+    # ``to_numpy(dtype=bool, na_value=False)`` because the unified Phase 6
+    # corpus preserves pandas nullable ``string`` dtype for finish_note
+    # (Phase 4 cycle-3 #1). A nullable comparison ``df["finish_note"] == "中"``
+    # yields a pandas nullable ``boolean`` Series carrying ``pd.NA`` for the
+    # ~531k finished entries; ``np.select`` rejects a nullable boolean Series
+    # with ``TypeError: invalid entry 0 in condlist: should be boolean ndarray``.
+    # Coercing ``pd.NA -> False`` routes unknown notes to the ``default``
+    # branch ("finished"), which is exactly the intended semantics: a
+    # finished race with no special note. Object-dtype corpus (Kaggle-only)
+    # behavior is preserved because ``None == "中"`` is already native False.
     conditions = [
-        df["finish_note"] == "中",
-        df["finish_note"] == "失",
-        df["finish_note"] == "取",
-        df["finish_note"] == "除",
-        df["finish_note"] == "降",
+        (df["finish_note"] == note).to_numpy(dtype=bool, na_value=False)
+        for note in ["中", "失", "取", "除", "降"]
     ]
     choices = ["dnf", "disqualified", "scratched", "removed", "demoted"]
     default = "finished"

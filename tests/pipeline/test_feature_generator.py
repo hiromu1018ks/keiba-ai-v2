@@ -853,6 +853,87 @@ class TestTargetVariable:
         )
 
 
+class TestTargetVariableNullableDtype:
+    """Regression: generate_target must accept nullable ``string`` finish_note.
+
+    Phase 4 cycle-3 #1 makes the standard layer preserve pandas nullable
+    dtypes end-to-end. The unified Phase 6 corpus therefore ships
+    ``finish_note`` as nullable ``string`` with ``pd.NA`` for the ~531k
+    finished entries. The Kaggle-only corpus carried plain ``object``
+    dtype with Python ``None``, so Phase 3 never exercised the
+    nullable-dtype path. ``np.select`` rejects a nullable ``boolean``
+    Series containing ``pd.NA`` with
+    ``TypeError: invalid entry 0 in condlist: should be boolean ndarray``
+    unless each condlist entry is coerced to a native bool ndarray.
+    """
+
+    @staticmethod
+    def _make_nullable_target_df() -> pd.DataFrame:
+        """Same row plan as TestTargetVariable but finish_note is nullable string.
+
+        The <NA> entries exercise the default -> "finished" branch which
+        must remain the semantics for finished races with no note.
+        """
+        return pd.DataFrame({
+            "horse_entity_key": [f"馬{i}" for i in range(10)],
+            "finish_position": pd.array(
+                [1, 2, 3, 4, None, None, None, None, 2, 5], dtype="Int64"
+            ),
+            # Explicit nullable string dtype -- this is what the unified
+            # corpus ships. pd.NA, NOT Python None.
+            "finish_note": pd.array(
+                [None, None, None, None, "中", "取", "除", "失", "降", None],
+                dtype="string",
+            ),
+        })
+
+    def test_generate_target_handles_nullable_string_finish_note(self) -> None:
+        """generate_target must not raise on nullable string finish_note.
+
+        Exercises the dtype edge case that the unified Phase 6 corpus
+        triggers. Coercing each condlist entry to a native bool ndarray
+        (pd.NA -> False) keeps the 6-way classification identical to the
+        object-dtype path.
+        """
+        df = self._make_nullable_target_df()
+        # Must not raise TypeError.
+        result = generate_target(df)
+
+        # finish_note dtype preserved through .copy(); assert classification.
+        # Rows 0-3,9: pd.NA finish_note -> finished.
+        assert result.iloc[0]["result_status"] == "finished"
+        assert result.iloc[3]["result_status"] == "finished"
+        assert result.iloc[9]["result_status"] == "finished"
+
+        # Row 4: 中 -> dnf.
+        assert result.iloc[4]["result_status"] == "dnf"
+        assert result.iloc[4]["is_dnf"] == True  # noqa: E712
+        assert result.iloc[4]["exclude_from_training"] == False  # noqa: E712
+
+        # Row 5: 取 -> scratched.
+        assert result.iloc[5]["result_status"] == "scratched"
+        assert result.iloc[5]["exclude_from_training"] == True  # noqa: E712
+
+        # Row 6: 除 -> removed.
+        assert result.iloc[6]["result_status"] == "removed"
+        assert result.iloc[6]["exclude_from_training"] == True  # noqa: E712
+
+        # Row 7: 失 -> disqualified.
+        assert result.iloc[7]["result_status"] == "disqualified"
+        assert result.iloc[7]["is_dnf"] == True  # noqa: E712
+        assert result.iloc[7]["exclude_from_training"] == False  # noqa: E712
+
+        # Row 8: 降 -> demoted (keeps finish_position 2 -> top3=1).
+        assert result.iloc[8]["result_status"] == "demoted"
+        assert result.iloc[8]["target_top3"] == 1
+
+        # All six statuses distinct (non-degenerate).
+        statuses = set(result["result_status"].tolist())
+        assert statuses == {
+            "finished", "dnf", "scratched", "removed", "disqualified", "demoted"
+        }, statuses
+
+
 class TestMarginConversion:
     """Tests for margin text-to-numeric conversion (Plan 03-02)."""
 
