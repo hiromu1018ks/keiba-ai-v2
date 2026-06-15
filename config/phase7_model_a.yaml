@@ -1,0 +1,199 @@
+# Phase 7 Model A (top-3 probability) — sensible-defaults config.
+#
+# Authority: .planning/phases/07-model-a-top-3-probability/07-RESEARCH.md
+#            § Code Examples (Sensible Defaults Config YAML, lines 454-525).
+# Contract decisions: D-13 (sensible defaults + early stopping) + D-14
+#            (YAML config + fixed seed) + D-15 (artifact layout).
+#
+# Codex HIGH #5 fix (feature_columns key): data.feature_columns is the
+# config-side authority for the model feature column list. run_train resolves
+# this list and passes it as an explicit argument to collect_oof_predictions
+# and train_final_model (the trainer modules NEVER read
+# config["data"]["feature_columns"] internally). The list MUST match
+# src/pipeline/feature_generator.py FEATURE_COLUMNS exactly — a hermetic test
+# (test_feature_columns_config_consistency) locks this set-equality.
+#
+# NOTE on the trainer's effective feature columns: FEATURE_COLUMNS is the
+# static allowlist of "columns that ARE model features" (or supporting
+# identification columns). The identifiers / targets / post-race status
+# columns that appear in FEATURE_COLUMNS for schema-completeness are excluded
+# from the actual model input via data.drop_columns below. run_train resolves
+# the effective feature list as: [c for c in data.feature_columns
+#                                   if c not in data.drop_columns]
+# and passes THAT list to the trainer (Codex HIGH #5 + leak safety).
+
+seed: 42
+
+data:
+  feature_path: data/feature/features_train.parquet
+  entry_path: data/standard/entry.parquet
+  train_window: ["2018-01-01", "2024-12-31"]      # D-01 / D-02 train window
+  holdout_window: ["2025-01-01", "2026-05-31"]    # D-01 / D-02 holdout window
+  target_column: target_top3
+  exclude_column: exclude_from_training
+
+  # Codex HIGH #5 fix: authoritative feature_columns list.
+  # MUST equal src.pipeline.feature_generator.FEATURE_COLUMNS (set equality
+  # verified by test_feature_columns_config_consistency). The trainer receives
+  # data.feature_columns minus data.drop_columns (see run_train).
+  feature_columns:
+    # RACE_FEATURES
+    - race_id
+    - race_date
+    - course_name
+    - distance
+    - surface
+    - direction
+    - weather
+    - track_condition
+    - race_number
+    - grade
+    - field_size
+    # HORSE_FEATURES
+    - bracket_num
+    - horse_number
+    - sex
+    - age
+    - weight_assigned
+    - horse_weight
+    - weight_change
+    # LAG_RAW_FEATURES (5 metrics x 5 lags = 25 columns)
+    - prev_1_finish_position
+    - prev_1_last_3f
+    - prev_1_corner_4
+    - prev_1_finish_time_zscore
+    - prev_1_margin_numeric
+    - prev_2_finish_position
+    - prev_2_last_3f
+    - prev_2_corner_4
+    - prev_2_finish_time_zscore
+    - prev_2_margin_numeric
+    - prev_3_finish_position
+    - prev_3_last_3f
+    - prev_3_corner_4
+    - prev_3_finish_time_zscore
+    - prev_3_margin_numeric
+    - prev_4_finish_position
+    - prev_4_last_3f
+    - prev_4_corner_4
+    - prev_4_finish_time_zscore
+    - prev_4_margin_numeric
+    - prev_5_finish_position
+    - prev_5_last_3f
+    - prev_5_corner_4
+    - prev_5_finish_time_zscore
+    - prev_5_margin_numeric
+    # LAG_STAT_FEATURES (5 metrics x 2 stats x 2 windows = 20 columns)
+    - prev3_finish_position_mean
+    - prev3_finish_position_std
+    - prev3_last_3f_mean
+    - prev3_last_3f_std
+    - prev3_corner_4_mean
+    - prev3_corner_4_std
+    - prev3_finish_time_zscore_mean
+    - prev3_finish_time_zscore_std
+    - prev3_margin_numeric_mean
+    - prev3_margin_numeric_std
+    - prev5_finish_position_mean
+    - prev5_finish_position_std
+    - prev5_last_3f_mean
+    - prev5_last_3f_std
+    - prev5_corner_4_mean
+    - prev5_corner_4_std
+    - prev5_finish_time_zscore_mean
+    - prev5_finish_time_zscore_std
+    - prev5_margin_numeric_mean
+    - prev5_margin_numeric_std
+    # PERSON_FEATURES
+    - jockey
+    - trainer
+    - jockey_rolling_top3_rate
+    - jockey_rolling_win_rate
+    - jockey_rolling_rides
+    - trainer_rolling_top3_rate
+    - trainer_rolling_win_rate
+    - trainer_rolling_rides
+    # DEBUT_FEATURE
+    - is_debut
+
+  # Categorical columns (D-16 native categoricals, no one-hot).
+  # RESEARCH Code Examples lines 454-525 enumerate 9 columns.
+  categorical_columns:
+    - course_name
+    - surface
+    - direction
+    - weather
+    - track_condition
+    - sex
+    - jockey
+    - trainer
+    - grade
+
+  # Columns dropped from the model feature input (identifiers / targets /
+  # post-race status). These are present in FEATURE_COLUMNS for schema
+  # completeness but must NOT enter the LightGBM feature matrix — otherwise
+  # race_id leaks as a near-unique key and race_date leaks the temporal
+  # position. run_train resolves effective_features = feature_columns minus
+  # drop_columns before calling the trainer.
+  drop_columns:
+    - race_id
+    - race_date
+    - horse_entity_key
+    - horse_name
+    - result_status
+    - is_dnf
+    - horse_number
+
+cv:
+  method: group_timeseries
+  n_splits: 5
+  group_column: race_id        # 07-07 canonical key (Codex HIGH #5 path)
+  sort_column: race_date
+  early_stopping_val_ratio: 0.2  # D-04 inner-val carve ratio
+
+model:
+  objective: binary
+  metric: [binary_logloss, auc]
+  num_leaves: 31
+  learning_rate: 0.05
+  min_data_in_leaf: 100
+  feature_fraction: 0.9
+  bagging_fraction: 0.9
+  bagging_freq: 5
+  max_depth: -1
+  lambda_l1: 0.0
+  lambda_l2: 0.0
+  min_gain_to_split: 0.0
+  verbose: -1
+  force_col_wise: true
+  n_estimators: 1000
+
+early_stopping:
+  stopping_rounds: 50
+  verbose: false
+  first_metric_only: false
+  log_period: 50
+
+calibration:
+  method: isotonic
+  y_min: 0.0
+  y_max: 1.0
+  out_of_bounds: clip
+  fit_on: oof
+
+evaluation:
+  ece_bins: 10
+  ece_tolerance: 0.02          # D-11 success criterion (ECE < 0.02)
+  reliability_diagram: true
+
+artifacts:
+  model_dir: models/phase7
+  oof_dir: data/model/oof
+  report_dir: reports/phase7
+  model_filename: model_a.lgb.txt
+  calibrator_filename: isotonic_calibrator.joblib
+  oof_filename: oof_predictions.parquet
+  holdout_filename: holdout_predictions.parquet
+  metrics_filename: metrics.json
+  report_filename: evaluation_report.md
+  diagram_filename: reliability_diagram.png

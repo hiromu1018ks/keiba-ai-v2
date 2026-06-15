@@ -21,6 +21,11 @@ venv/
 # Data files (large, not versioned)
 data/
 
+# Phase 7 model artifacts (D-15 — gitignored, local-only)
+models/phase7/
+data/model/oof/
+reports/phase7/
+
 # GSD transient caches
 .planning/research/.cache/
 
