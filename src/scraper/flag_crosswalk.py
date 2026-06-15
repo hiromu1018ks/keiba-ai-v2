@@ -20,30 +20,27 @@ in ``FLAG_CROSSWALK``. This is the mechanical diff guard Codex recommended
 Phase 6 reconciliation note on ``(国際)`` and ``race_flag_graded_stakes``:
 ``(国際)`` is an INTERNATIONAL-designation marker, NOT a graded-stakes
 marker. A graded flag MUST only be True for actual graded races, which
-``GRADE_REGEX`` (GI/GII/GIII/G1/G2/G3/JG*/重賞/full-width ＧＩ...) already
-detects correctly inside ``derive_race_flags``. Mapping ``(国際)`` to
-``race_flag_graded_stakes`` was a semantic error that caused
-Listed/OP-special races carrying the ``(国際)`` substring (e.g.
-ヒヤシンスS 202405010809, a Listed race) to be misclassified as graded,
-contaminating any downstream feature that keys off the graded flag
+``_GRADE_REGEX`` (GI/GII/GIII/G1/G2/G3/JG*/重賞/full-width ＧＩ... and the
+WR-01 Roman-numeral GⅠ/GⅡ/GⅢ forms) already detects correctly inside
+``derive_race_flags``. Mapping ``(国際)`` to ``race_flag_graded_stakes`` was a
+semantic error that caused Listed/OP-special races carrying the ``(国際)``
+substring (e.g. ヒヤシンスS 202405010809, a Listed race) to be misclassified
+as graded, contaminating any downstream feature that keys off the graded flag
 (UAT-Test-3, severity: major).
 
-This scraper-side module therefore INTENTIONALLY does NOT map
-``(国際)`` to ``race_flag_graded_stakes``. The Kaggle-side
-``src/pipeline/column_mapping.py`` line 68 still maps
-``レース記号/(国際)`` -> ``race_flag_graded_stakes``; that file is out
-of scope for this gap fix (it is a Kaggle-pipeline file). Phase 6 (Data
-Integration) MUST reconcile this divergence before joining the two
-sources: either remove the Kaggle-side mapping too, or introduce a new
-``race_flag_international`` column on both sides. Until Phase 6 ships,
-scraped 2022-2024 rows with ``(国際)`` but no GI token will have
-``race_flag_graded_stakes=None`` while equivalent 2015-2021 Kaggle rows
-have ``True`` — a known, documented, bounded inconsistency. The
-parametrized coverage guard
-``test_crosswalk_covers_all_kaggle_flag_targets`` in
-``tests/scraper/test_parser.py`` filters out
-``race_flag_graded_stakes`` with a citing comment so this divergence is
-machine-visible, not silent.
+WR-09 (Phase 06 review): Phase 6 D-01 CLOSED this gap. The previous
+reconciliation note claimed the Kaggle-side mapping at
+``src/pipeline/column_mapping.py`` line 68 was still present and out of
+scope; that is now FALSE. Phase 6 D-01 REMOVED the Kaggle-side
+``(国際) -> race_flag_graded_stakes`` mapping (the (国際) CSV column is still
+listed in FLAG_COLUMNS but no longer in KAGGLE_COLUMN_MAP, which has 65
+entries — see ``test_kaggle_column_map_has_65_entries``). Graded detection on
+both sides now comes from ``_GRADE_REGEX`` via ``derive_race_flags`` /
+``kaggle_converter._apply_grade_detection`` (which also handles the bare
+``L``/``G`` grade tokens per CR-01/CR-02). Do NOT re-introduce a
+``(国際) -> race_flag_graded_stakes`` mapping on either side, and do NOT add a
+``race_flag_international`` column — either change re-opens the major-severity
+bug D-01 closed.
 
 Semantics (per Codex Review MEDIUM):
   * ``None``  = unknown / not observed in the source text. The normalizer
