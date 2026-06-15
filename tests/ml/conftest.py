@@ -192,30 +192,38 @@ def ml_config() -> dict:
             "train_end": "2023-12-31",
             "holdout_start": "2024-01-01",
             "holdout_end": "2024-12-31",
+            "target_column": "target_top3",  # 07-04 trainer / 07-07 canonical key
         },
         "cv": {
             "method": "group_timeseries",
             "n_splits": 5,
             "group_col": "race_id",
+            "group_column": "race_id",  # 07-07 canonical key (Codex HIGH #5 path)
             "time_col": "race_date",
+            "early_stopping_val_ratio": 0.2,  # D-04 inner-val carve ratio
         },
         "model": {
             "objective": "binary",
             "metric": "binary_logloss",
-            "num_leaves": 31,
-            "learning_rate": 0.05,
-            "min_data_in_leaf": 20,
+            "num_leaves": 8,  # shrunk from 31 so tiny fixtures overfit reliably
+            "learning_rate": 0.1,
+            "min_data_in_leaf": 2,  # shrunk so hermetic fixtures (<20 rows) train
             "n_estimators": 50,
             "feature_fraction": 0.9,
             "bagging_fraction": 0.9,
             "bagging_freq": 5,
+            "max_depth": -1,
+            "lambda_l1": 0.0,
+            "lambda_l2": 0.0,
+            "min_gain_to_split": 0.0,
             "verbose": -1,
             "force_col_wise": True,
         },
         "early_stopping": {
-            "stopping_rounds": 10,
+            "stopping_rounds": 5,
             "stopping_metric": "binary_logloss",
             "first_metric_only": True,
+            "verbose": False,
         },
         "calibration": {
             "method": "isotonic",
