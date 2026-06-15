@@ -263,6 +263,21 @@ def collect_oof_predictions(
     target_col = _resolve_target_column(config)
     group_col = _resolve_group_column(config)
 
+    # WR-05: OOF output schema pins the group column name to "race_id". This
+    # is load-bearing — Phase 8 Harville groups on oof_predictions.parquet's
+    # race_id column. _resolve_group_column lets config set cv.group_column
+    # to other values (future horse_race_id-based CV), but the OOF DataFrame
+    # literal below uses "race_id" unconditionally; if group_col != "race_id"
+    # the column would silently carry the wrong-group values under the
+    # "race_id" name. Fail loudly at the boundary rather than corrupt Phase 8.
+    if group_col != "race_id":
+        raise ValueError(
+            "collect_oof_predictions requires cv.group_column='race_id' for "
+            "OOF schema stability (Phase 8 Harville groups on race_id); got "
+            f"'{group_col}'. Pinning the column name in code AND allowing a "
+            "different group_col would silently mislabel the OOF race_id column."
+        )
+
     # Cycle-2 HIGH #1: race_date MUST be present so we can forward it to the
     # splitter. Trainer never drops race_date.
     if "race_date" not in df.columns:
