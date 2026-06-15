@@ -623,13 +623,20 @@ class TestIntegration:
         )
 
     def test_row_counts_within_expected_range(self) -> None:
-        """Verify row counts are within 5% of expected."""
+        """Verify row counts are within 5% of expected.
+
+        Post-Phase-6 integration (Plan 06-03), the unified corpus covers
+        2015-2026/5 (Kaggle 2015-2021 + scraped 2021-08..2026-05). The
+        expected counts below reflect the UNIFIED corpus, not the Kaggle-only
+        pre-integration counts. Updated when Phase 6 grew the corpus from
+        Kaggle-only (race=21929, entry/result=311806) to unified.
+        """
         from src.pipeline.validators import validate_row_counts
 
         expected = {
-            "race": 21929,
-            "entry": 311806,
-            "result": 311806,
+            "race": 38009,
+            "entry": 534953,
+            "result": 534953,
         }
         result = validate_row_counts(expected, STANDARD_DIR)
         for table, passed in result.items():

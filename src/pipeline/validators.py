@@ -160,8 +160,16 @@ def validate_schema_conformance(parquet_dir: Path) -> dict[str, list[str]]:
             compatible_dtypes = _DTYPE_COMPAT.get(expected_cat, set())
 
             if actual_dtype not in compatible_dtypes:
-                # Check if nullable integer stored as float (common in Parquet)
-                if expected_cat == "int" and "float" in actual_dtype:
+                # Check if nullable integer stored as float (common in Parquet).
+                # Case-insensitive substring match so pandas nullable ``Float64`` /
+                # ``Float32`` are accepted alongside numpy ``float64``/``float32``.
+                # Per Phase 4 cycle-3 #1 (STATE.md), ``SCHEMA_DTYPE_MAP`` deliberately
+                # stores nullable-int fields (corner_1..4, horse_weight, weight_change,
+                # popularity) as ``Float64`` because Arrow ``double`` round-trips
+                # cleanly and matches Kaggle's physical type; ``Int64`` would serialize
+                # to Arrow int64 and fail the physical-type equality test. This
+                # special-case acknowledges that intentional storage choice.
+                if expected_cat == "int" and "float" in actual_dtype.lower():
                     # Nullable Int64 columns can become float64 when all NaN
                     continue
                 if expected_cat == "str" and actual_dtype == "object":
