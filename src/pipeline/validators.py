@@ -50,6 +50,19 @@ _DTYPE_COMPAT: dict[str, set[str]] = {
 }
 
 
+# WR-02 (Phase 06 review): allowlist of int fields deliberately stored as
+# Float64 per SCHEMA_DTYPE_MAP (Phase 4 cycle-3 #1). These are the nullable-int
+# fields that serialize to Arrow double; the dtype shortcut accepts them as
+# int-compatible WITHOUT a content check because the storage choice is
+# intentional and documented. Int fields NOT in this allowlist that are stored
+# as float must pass the integer-valued content check below (a `distance`
+# column corrupted to [2000.5, 1600.25] is rejected).
+_INT_AS_FLOAT_ALLOWLIST: set[str] = {
+    "corner_1", "corner_2", "corner_3", "corner_4",
+    "horse_weight", "weight_change", "popularity",
+}
+
+
 def _get_expected_dtype(field_info: Any) -> str:
     """Determine expected dtype category from a Pydantic field annotation.
 
@@ -200,8 +213,25 @@ def validate_schema_conformance(parquet_dir: Path) -> dict[str, list[str]]:
                 # cleanly and matches Kaggle's physical type; ``Int64`` would serialize
                 # to Arrow int64 and fail the physical-type equality test. This
                 # special-case acknowledges that intentional storage choice.
+                #
+                # WR-02 (Phase 06 review): the previous code accepted ANY float
+                # for ANY int field, conflating "nullable-int-stored-as-float-by-
+                # design" with "int-field-corrupted-to-float". Now the allowlist
+                # short-circuits the intentional-design fields, and all other int
+                # fields stored as float must contain integer-valued content
+                # (a `distance` column with [2000.5, 1600.25] is rejected).
                 if expected_cat == "int" and "float" in actual_dtype.lower():
-                    # Nullable Int64 columns can become float64 when all NaN
+                    if field_name in _INT_AS_FLOAT_ALLOWLIST:
+                        continue
+                    series = df[field_name].dropna()
+                    if series.empty or (series % 1 == 0).all():
+                        # All-NaN or integer-valued: accept.
+                        continue
+                    errors.append(
+                        f"Dtype/value mismatch for {field_name}: stored as "
+                        f"{actual_dtype} with non-integer values "
+                        f"(e.g. {series.head(3).tolist()})"
+                    )
                     continue
                 if expected_cat == "str" and actual_dtype == "object":
                     continue  # str is stored as object, this is fine

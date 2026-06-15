@@ -320,6 +320,62 @@ class TestValidateSchemaConformance:
             f"All-NA object bool column should be accepted; got {nonbool_errors}"
         )
 
+    def test_int_field_corrupted_to_non_integer_float_rejected(
+        self, tmp_path: Path
+    ) -> None:
+        """WR-02: an int field stored as float with non-integer values is rejected.
+
+        Previously the Rule-1 shortcut accepted ANY float for ANY int field, so
+        a `distance` column corrupted to [2000.5, 1600.25] passed schema
+        conformance silently. The fix adds an allowlist (corner_1..4,
+        horse_weight, weight_change, popularity — the SCHEMA_DTYPE_MAP
+        intentional Float64 fields) and requires integer-valued content for
+        all other int fields stored as float.
+        """
+        from src.pipeline.validators import validate_schema_conformance
+
+        parquet_dir = tmp_path / "standard"
+        parquet_dir.mkdir()
+        # distance is an int field NOT in the allowlist; corrupt to non-integer.
+        df = pd.DataFrame({
+            "race_id": ["001", "002"],
+            "distance": pd.array([2000.5, 1600.25], dtype="float64"),
+        })
+        df.to_parquet(parquet_dir / "race.parquet", engine="pyarrow", index=False)
+
+        result = validate_schema_conformance(parquet_dir)
+        distance_errors = [
+            e for e in result.get("race", [])
+            if "distance" in e and "non-integer" in e
+        ]
+        assert distance_errors, (
+            f"Expected a non-integer-value error for distance; got "
+            f"errors={result.get('race', [])}"
+        )
+
+    def test_int_field_integer_valued_float_accepted(
+        self, tmp_path: Path
+    ) -> None:
+        """WR-02: an int field stored as float with integer-valued content is accepted."""
+        from src.pipeline.validators import validate_schema_conformance
+
+        parquet_dir = tmp_path / "standard"
+        parquet_dir.mkdir()
+        # distance stored as float64 but all values are integer-valued.
+        df = pd.DataFrame({
+            "race_id": ["001", "002"],
+            "distance": pd.array([2000.0, 1600.0], dtype="float64"),
+        })
+        df.to_parquet(parquet_dir / "race.parquet", engine="pyarrow", index=False)
+
+        result = validate_schema_conformance(parquet_dir)
+        distance_errors = [
+            e for e in result.get("race", []) if "distance" in e and "non-integer" in e
+        ]
+        assert distance_errors == [], (
+            f"Integer-valued float distance should be accepted; got {distance_errors}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 3: validate_audit
