@@ -218,13 +218,28 @@ Plans:
   3. Model AUC or ROI metric exceeds the popularity-rank baseline (horses ranked by win odds) on out-of-fold predictions
   4. OOF predictions are calibrated: predicted probability bins match actual top-3 hit rates within a defined tolerance
 
-**Plans**: TBD
+**Plans**: 8 plans
 
 Plans:
+**Wave 0**
 
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
-- [ ] 07-03: TBD
+- [ ] 07-01: Environment install (libomp + scikit-learn + matplotlib + joblib) + tests/ml/ scaffolding (conftest + 6 test skeletons + gated marker)
+
+**Wave 1** *(07-02..07-06 run in parallel — no file overlap)*
+
+- [ ] 07-02: data_loader.py — features_train 読込 + dtype 整備 + horse_race_id derive + window 分割 + audit_leakage (MODA-01)
+- [ ] 07-03: group_timeseries_split.py — sklearn BaseCrossValidator 準拠の race_id グループ化時系列CV (MODA-02)
+- [ ] 07-04: trainer.py — LightGBM sensible defaults + early stopping callback API + OOF 収集 + 全量再学習 (MODA-01)
+- [ ] 07-05: calibrator.py — Isotonic OOF→holdout リーク防止パターン (MODA-04)
+- [ ] 07-06: evaluator.py + baseline.py — ECE/metrics/reliability diagram + 人気ベースライン AUC (MODA-04, MODA-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07-07: run_train.py orchestrator + config/phase7_model_a.yaml + src/ml/__init__.py re-exports + hermetic E2E (MODA-01..04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07-08: 実データ phase gate — python -m src.ml.run_train で6成果物生成 + 人間 verify（D-07 AUC目安0.75 + D-11 ECE<0.02）(MODA-01..04)
 
 ### Phase 8: EV Calculation Engine
 
