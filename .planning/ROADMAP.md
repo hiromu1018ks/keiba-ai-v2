@@ -225,21 +225,24 @@ Plans:
 
 - [ ] 07-01: Environment install (libomp + scikit-learn + matplotlib + joblib) + tests/ml/ scaffolding (conftest + 6 test skeletons + gated marker)
 
-**Wave 1** *(07-02..07-06 run in parallel — no file overlap)*
+**Wave 1** *(07-02, 07-03, 07-05, 07-06 run in parallel — no file overlap; Codex HIGH #3 fix: 07-04 moved to Wave 2 because it runtime-depends on 07-03's split_train_validation)*
 
-- [ ] 07-02: data_loader.py — features_train 読込 + dtype 整備 + horse_race_id derive + window 分割 + audit_leakage (MODA-01)
-- [ ] 07-03: group_timeseries_split.py — sklearn BaseCrossValidator 準拠の race_id グループ化時系列CV (MODA-02)
-- [ ] 07-04: trainer.py — LightGBM sensible defaults + early stopping callback API + OOF 収集 + 全量再学習 (MODA-01)
-- [ ] 07-05: calibrator.py — Isotonic OOF→holdout リーク防止パターン (MODA-04)
+- [ ] 07-02: data_loader.py — features_train 読込 + dtype 整備 + horse_race_id derive + window 分割 + audit_leakage + expected_counts bypass (MODA-01, Codex HIGH #4 fix)
+- [ ] 07-03: group_timeseries_split.py — sklearn BaseCrossValidator 準拠の race_id グループ化時系列CV・n_splits+1 chunk scheme (MODA-02, Codex HIGH #1 fix)
+- [ ] 07-05: calibrator.py — Isotonic OOF(val chunks only)→holdout リーク防止パターン (MODA-04, Codex HIGH #2 fix)
 - [ ] 07-06: evaluator.py + baseline.py — ECE/metrics/reliability diagram + 人気ベースライン AUC (MODA-04, MODA-03)
 
-**Wave 2** *(blocked on Wave 1 completion)*
+**Wave 2** *(blocked on Wave 1 completion; 07-04 depends on 07-03 per Codex HIGH #3 fix)*
 
-- [ ] 07-07: run_train.py orchestrator + config/phase7_model_a.yaml + src/ml/__init__.py re-exports + hermetic E2E (MODA-01..04)
+- [ ] 07-04: trainer.py — LightGBM sensible defaults + early stopping callback API + OOF 収集(val chunks only) + 二段階全量再学習 + feature_columns 明示的引数 (MODA-01, Codex HIGH #2/#5/#6 fixes)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 07-08: 実データ phase gate — python -m src.ml.run_train で6成果物生成 + 人間 verify（D-07 AUC目安0.75 + D-11 ECE<0.02）(MODA-01..04)
+- [ ] 07-07: run_train.py orchestrator + config/phase7_model_a.yaml (feature_columns キー追加) + src/ml/__init__.py re-exports + hermetic E2E (expected_counts bypass) (MODA-01..04, Codex HIGH #2/#4/#5 fixes)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 07-08: 実データ phase gate — python -m src.ml.run_train で6成果物生成 + 人間 verify（D-07 AUC目安0.75 + D-11 ECE<0.02 + holdout retune 禁止）(MODA-01..04, Codex HIGH #2/#7 fixes)
 
 ### Phase 8: EV Calculation Engine
 
