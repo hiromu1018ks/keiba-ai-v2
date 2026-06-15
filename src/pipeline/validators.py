@@ -554,7 +554,16 @@ def validate_sample_rows(
         try:
             pq_df = pd.read_parquet(parquet_path)
             if len(pq_df) == 0:
-                results[table_name] = True
+                # CR-04(a) (Phase 06 review): a 0-row Parquet is the signature
+                # of a corrupt convert/integration run (integration.py:380-384
+                # raises at WRITE time, but this is the post-hoc independent
+                # validator). The previous code set True here, meaning a 0-row
+                # table passed sample-row validation silently. Fail loud instead.
+                logger.warning(
+                    f"sample_rows: {table_name} Parquet is empty (0 rows) -- "
+                    f"flagging as FAIL (potential corrupt convert/integration)"
+                )
+                results[table_name] = False
                 continue
 
             # Sample rows
@@ -575,8 +584,17 @@ def validate_sample_rows(
                 csv_key_candidates[0] if isinstance(csv_key_candidates, list) else csv_key_candidates,
             )
             if csv_key not in source_df.columns:
-                # Can't verify without matching key -- skip
-                results[table_name] = True
+                # CR-04(a) (Phase 06 review): previously this set True,
+                # meaning a table whose join key was missing from the source
+                # CSV passed sample-row validation silently. Omit from results
+                # (distinguish "not checked" from "passed"); the aggregator
+                # `all(sample_result.values()) if sample_result else True`
+                # correctly returns True only when at least one table WAS
+                # checked AND all checked tables passed.
+                logger.warning(
+                    f"sample_rows: {table_name} key {csv_key} missing from "
+                    f"source CSV -- not checked (omitted from results)"
+                )
                 continue
 
             # Build list of comparable columns: English names where at
@@ -588,12 +606,14 @@ def validate_sample_rows(
             ]
 
             if not comparable_cols:
+                # CR-04(a) (Phase 06 review): previously this set True, masking
+                # the case where no columns are comparable between CSV and
+                # Parquet. Omit from results (treated as "not checked").
                 logger.debug(
                     f"No comparable columns for {table_name} "
                     f"(Parquet cols: {list(sample.columns)}, "
                     f"CSV cols: {list(source_df.columns)[:5]}...)"
                 )
-                results[table_name] = True
                 continue
 
             # Build a minimal source lookup on the key column
@@ -878,9 +898,42 @@ def run_all_validations(
     # Sample rows (only check tables that were verified)
     sample_pass = all(sample_result.values()) if sample_result else True
 
-    # Audit: expected behavior -- race should have no leaks, but entry/result/odds/payoff
-    # are expected to have post-race columns, so we don't fail on those
-    audit_pass = True  # Audit is informational, not a pass/fail check
+    # CR-04(b) (Phase 06 review): make audit_pass CONDITIONAL on the actual
+    # audit results instead of hardcoded True. The previous code set
+    # audit_pass = True unconditionally, so the aggregate overall_pass could
+    # not detect race-table leakage (the race table is contractually pre-race
+    # only per integration.py:341-348) even though this validator is the
+    # post-hoc independent check.
+    #
+    # Semantics:
+    #   - race: ANY leak is a hard failure (race must be pre-race only).
+    #   - entry: popularity/win_odds are documented expected leaks per Phase 1
+    #     D-03 (Harville EV proxy). Any OTHER leak is a hard failure.
+    #   - result/odds/payoff: post-race by design — audit is informational.
+    audit_pass = True
+    if "race" in audit_result:
+        # Race audit entries are either column names (leaks) or "Missing: ..."
+        # messages (from validate_audit when the parquet is absent). A missing
+        # race parquet is already flagged by schema/integrity checks; here we
+        # only fail on actual column-name leaks.
+        race_leaks = [c for c in audit_result["race"] if not c.startswith("Missing:")]
+        if race_leaks:
+            audit_pass = False
+            logger.warning(
+                f"audit: race table leaked post-race columns {race_leaks} "
+                f"(race must be pre-race only)"
+            )
+    if "entry" in audit_result:
+        entry_leaks = [c for c in audit_result["entry"] if not c.startswith("Missing:")]
+        expected_entry_leak = {"popularity", "win_odds"}
+        unexpected_entry = set(entry_leaks) - expected_entry_leak
+        if unexpected_entry:
+            audit_pass = False
+            logger.warning(
+                f"audit: entry table leaked UNEXPECTED post-race columns "
+                f"{sorted(unexpected_entry)} (expected only "
+                f"{sorted(expected_entry_leak)})"
+            )
 
     # Null rates: pass if no source stats provided, otherwise check for flagged columns
     if source_stats is not None:

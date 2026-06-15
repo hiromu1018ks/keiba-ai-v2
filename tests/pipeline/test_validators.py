@@ -534,6 +534,36 @@ class TestValidateSampleRows:
         result = validate_sample_rows(raw_dir, parquet_dir, n_samples=2)
         assert result.get("race", True) is False, "Expected sample mismatch detected"
 
+    def test_empty_parquet_flagged_not_silent_pass(self, tmp_path: Path) -> None:
+        """CR-04(a): a 0-row Parquet is flagged False, not silently passed.
+
+        Previously validate_sample_rows set results[table] = True for an empty
+        Parquet, hiding corrupt convert/integration runs that produced 0 rows.
+        The fix sets False (fail loud) so the aggregate overall_pass can detect
+        the corruption.
+        """
+        from src.pipeline.validators import validate_sample_rows
+
+        raw_dir = tmp_path / "raw"
+        parquet_dir = tmp_path / "standard"
+        raw_dir.mkdir()
+        parquet_dir.mkdir()
+
+        # Source CSV exists (so we reach the empty-parquet branch, not the
+        # missing-CSV branch).
+        (raw_dir / "race_result.csv").write_text(
+            "レースID,距離(m)\nR001,2000\n", encoding="utf-8-sig"
+        )
+        # Empty race.parquet (0 rows).
+        pd.DataFrame({"race_id": pd.array([], dtype=object)}).to_parquet(
+            parquet_dir / "race.parquet", engine="pyarrow", index=False
+        )
+
+        result = validate_sample_rows(raw_dir, parquet_dir, n_samples=2)
+        assert result.get("race") is False, (
+            f"Empty Parquet must be flagged False (CR-04); got {result.get('race')!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 8: validate_value_ranges
@@ -647,6 +677,93 @@ class TestRunAllValidations:
         )
 
         assert result["overall_pass"] is True, f"Expected overall pass, got: {result}"
+
+    def test_audit_pass_false_on_race_table_leak(self, tmp_path: Path) -> None:
+        """CR-04(b): race-table leakage makes audit_pass (and overall_pass) False.
+
+        Previously audit_pass was hardcoded True, so a race table that leaked
+        post-race columns was silently blessed by run_all_validations. The fix
+        derives audit_pass from audit_result instead.
+
+        Note: validate_audit calls audit_leakage([RaceSchema], df), and
+        RaceSchema has NO post-race fields (every race field is pre-race by
+        design), so a real race leak cannot be detected through the current
+        per-schema audit_leakage design — it would require cross-schema
+        checking. This test therefore monkeypatches validate_audit to inject a
+        synthetic race leak, verifying that run_all_validations correctly
+        propagates it to audit_pass=False (the behavioral change CR-04 makes).
+        """
+        from unittest.mock import patch
+        from src.pipeline.validators import run_all_validations
+
+        parquet_dir = tmp_path / "standard"
+        raw_dir = tmp_path / "raw"
+        parquet_dir.mkdir()
+        raw_dir.mkdir()
+        (raw_dir / "race_result.csv").write_text(
+            "レースID,距離(m)\n001,2000\n", encoding="utf-8-sig"
+        )
+        # Minimal race.parquet so the orchestrator runs.
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        pq.write_table(
+            pa.table({"race_id": pa.array(["001"], type=pa.string())}),
+            parquet_dir / "race.parquet",
+        )
+
+        # Inject a synthetic race leak: validate_audit returns
+        # {"race": ["finish_position"], ...} for the race table.
+        with patch("src.pipeline.validators.validate_audit") as mock_audit:
+            mock_audit.return_value = {
+                "race": ["finish_position"],  # a leaked post-race column
+                "entry": ["popularity", "win_odds"],  # expected entry leaks
+            }
+            result = run_all_validations(raw_dir=raw_dir, parquet_dir=parquet_dir)
+
+        assert result["audit"] is False, (
+            f"audit_pass should be False when race table leaks post-race "
+            f"columns (CR-04); audit_detail={result.get('audit_detail')}"
+        )
+        assert result["overall_pass"] is False, (
+            "overall_pass should be False when audit fails (CR-04)"
+        )
+
+    def test_audit_pass_false_on_unexpected_entry_leak(self, tmp_path: Path) -> None:
+        """CR-04(b): an UNEXPECTED entry leak (beyond popularity/win_odds) fails audit.
+
+        popularity/win_odds are the documented expected entry leaks per Phase 1
+        D-03. Any OTHER post-race column in entry (e.g. finish_position from
+        result schema) is a hard failure. This test monkeypatches validate_audit
+        to inject an unexpected entry leak and verifies audit_pass=False.
+        """
+        from unittest.mock import patch
+        from src.pipeline.validators import run_all_validations
+
+        parquet_dir = tmp_path / "standard"
+        raw_dir = tmp_path / "raw"
+        parquet_dir.mkdir()
+        raw_dir.mkdir()
+        (raw_dir / "race_result.csv").write_text(
+            "レースID,距離(m)\n001,2000\n", encoding="utf-8-sig"
+        )
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        pq.write_table(
+            pa.table({"race_id": pa.array(["001"], type=pa.string())}),
+            parquet_dir / "race.parquet",
+        )
+
+        with patch("src.pipeline.validators.validate_audit") as mock_audit:
+            mock_audit.return_value = {
+                "race": [],
+                "entry": ["popularity", "win_odds", "finish_position"],  # unexpected
+            }
+            result = run_all_validations(raw_dir=raw_dir, parquet_dir=parquet_dir)
+
+        assert result["audit"] is False, (
+            f"audit_pass should be False on UNEXPECTED entry leak; "
+            f"audit_detail={result.get('audit_detail')}"
+        )
 
 
 # ---------------------------------------------------------------------------
