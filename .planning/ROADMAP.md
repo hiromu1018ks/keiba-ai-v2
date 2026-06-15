@@ -316,7 +316,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
-| 7. Model A -- Top-3 Probability | 8/8 | Complete   | 2026-06-15 |
+| 7. Model A -- Top-3 Probability | 8/8 | Complete    | 2026-06-15 |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
 | 10. CLI & Reporting | 0/? | Not started | - |
