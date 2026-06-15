@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 7 context gathered
-last_updated: "2026-06-15T13:23:28.296Z"
-last_activity: "2026-06-15 - Completed quick task 260615-jdx: feature_generator np.select fix + unified-corpus feature regen"
+status: executing
+stopped_at: Completed 07-01-PLAN.md (Wave 0 env + tests/ml scaffold)
+last_updated: "2026-06-15T13:49:21.876Z"
+last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 32
+  completed_plans: 25
   percent: 50
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** 推定的中確率に対してオッズが高い三連複を特定し、バックテストで回収率を検証できること
-**Current focus:** Phase 06 — data-integration
+**Current focus:** Phase 07 — model-a-top-3-probability
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
-Status: Phase 06 fully delivered; unified corpus LOCKED (race=38009/entry=result=534953); feature_generator np.select 修正 + feature 層再生成 済み（quick 260615-jdx）＋ feature 層 直接再検証済み（03-VERIFICATION.md re_verified 2026-06-15, unified corpus）; next = Phase 7
-Last activity: 2026-06-15 - Completed quick task 260615-jdx: feature_generator np.select fix + unified-corpus feature regen
+Phase: 07 (model-a-top-3-probability) — EXECUTING
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-06-15 -- Phase 07 execution started
 
 Progress: [████░░░░░░] 42%
 
@@ -75,6 +75,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P01 | 846 | 3 tasks | 4 files |
 | Phase 06 P02 | 777 | 2 tasks | 3 files |
 | Phase 06 P03 | 2100 | 2 tasks | 3 files |
+| Phase 07 P01 | 967 | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,8 @@ Recent decisions affecting current work:
 - [Phase 06 P03]: UNIFIED CORPUS DELIVERED (DATA-05) -- integrate_standard_layer wrote race=38009 / entry=534953 / result=534953 rows (Kaggle 21929/311806/311806 + scraped 16080/223147/223147). Full 8-point run_all_validations overall_pass=True with UNIFIED source_stats. odds/payoff SHA-256 byte-identical pre/post (D-05). per-period graded: kaggle=893, scraped=578 (both match grade-regex). EXPECTED_FLOOR '2026-05-01' satisfied (actual_scraped_max=2026-05-31); 202605 partition non-empty (322 rows). PK-set union equality for all 3 tables. RULE 1 fix in validate_schema_conformance: case-insensitive 'float' substring so pandas nullable Float64 (Phase 4 cycle-3 #1 authority for nullable-int fields) is accepted.
 - [Phase 06 P03]: D-07 scope LOCKED at 2015-2026/5 (actual_scraped_max=2026-05-31). ROADMAP success criterion #3 still reads '2015-2024' -- text update DEFERRED to Phase 9 per 06-CONTEXT.md Deferred Ideas. D-07 takes precedence as the LOCKED contract.
 - [Phase 06 P03]: DEFERRED to Phase 3 re-run -- feature_generator TypeError (np.select empty condlist) on the larger unified corpus; 2 tests fail in tests/pipeline/test_feature_generator.py. Owning phase = Phase 3 (explicitly deferred per 06-CONTEXT.md). Corpus itself is correct (8-point validation green). See .planning/phases/06-data-integration/deferred-items.md.
+- [Phase ?]: [Phase 07 P01]: src.ml/__init__.py ships as import-safe empty marker (Phase 4 P01 analog); public re-exports deferred to Plan 07-07. Wave 0 scaffold only — no production src/ml/* symbols created.
+- [Phase ?]: [Phase 07 P01]: tests/ml/conftest.py hermetic fixtures — sample_feature_df keeps jockey/trainer as pandas CategoricalDtype (D-16 native categoricals, no one-hot), grade stays object/string with NaN preserved (Pitfall #4); popularity/win_odds live in sample_entry_df (separate) so leakage audit on feature df is empty by construction. 24 skip-state test cases named per RESEARCH Test Map + PATTERNS planner directives.
 
 ### Pending Todos
 
@@ -168,6 +171,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T09:31:55.399Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-model-a-top-3-probability/07-CONTEXT.md
+Last session: 2026-06-15T13:49:21.871Z
+Stopped at: Completed 07-01-PLAN.md (Wave 0 env + tests/ml scaffold)
+Resume file: .planning/phases/07-model-a-top-3-probability/07-02-PLAN.md

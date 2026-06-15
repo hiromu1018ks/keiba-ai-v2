@@ -223,7 +223,7 @@ Plans:
 Plans:
 **Wave 0**
 
-- [ ] 07-01: Environment install (libomp + scikit-learn + matplotlib + joblib) + tests/ml/ scaffolding (conftest + 6 test skeletons + gated marker)
+- [x] 07-01: Environment install (libomp + scikit-learn + matplotlib + joblib) + tests/ml/ scaffolding (conftest + 6 test skeletons + gated marker)
 
 **Wave 1** *(07-02, 07-03, 07-05, 07-06 run in parallel — no file overlap; Codex HIGH #3 fix: 07-04 moved to Wave 2 because it runtime-depends on 07-03's split_train_validation)*
 
@@ -316,7 +316,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
-| 7. Model A -- Top-3 Probability | 0/? | Not started | - |
+| 7. Model A -- Top-3 Probability | 1/8 | In Progress|  |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
 | 10. CLI & Reporting | 0/? | Not started | - |
