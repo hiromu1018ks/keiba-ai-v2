@@ -202,7 +202,9 @@ Plans:
 
 **Wave 3** *(blocked on 06-01, 06-02)*
 
-- [ ] 06-03: Per-partition preflight + invoke integrate_standard_layer() + odds/payoff SHA-256 in verify.automated + per-period graded counts + robust date-range/per-year assertions + human inspection gate (DATA-05)
+- [~] 06-03: Per-partition preflight (PASSED: 58 partitions 202108..202605, month-set equality, zero-tolerance gate) + invoke integrate_standard_layer() (DONE: race=38009/entry=result=534953 unified) + odds/payoff SHA-256 byte-identical pre/post + 8-point run_all_validations overall_pass=True (UNIFIED source_stats) + per-period graded counts (kaggle=893, scraped=578) + robust date-range (dmin=2015-01-04, dmax=actual_scraped_max=2026-05-31 >= EXPECTED_FLOOR '2026-05-01'; 202605 partition non-empty) + PK-set union for all 3 tables + human inspection gate (DATA-05) — **Tasks 1-2 complete; Task 3 human-verify checkpoint pending user approval (NOT self-approved)**
+
+> **Note (D-07 scope extension):** The unified corpus covers 2015-2026/5 (actual_scraped_max=2026-05-31), exceeding the original success-criterion #3 text "2015-2024". Per CONTEXT.md D-07 ("実データ全部（2015-2026/5）") and 06-CONTEXT.md Deferred Ideas, the ROADMAP success-criterion text update is DEFERRED to Phase 9 backtest planning. D-07 is the LOCKED contract that takes precedence; the actual coverage (2015-2026/5) is verified TRUE in 06-03-SUMMARY.md.
 
 ### Phase 7: Model A -- Top-3 Probability
 

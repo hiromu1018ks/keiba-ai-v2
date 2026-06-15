@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration
-last_updated: "2026-06-14T14:07:01.760Z"
-last_activity: 2026-06-14 -- Phase 06 execution started
+stopped_at: Phase 6 plan 06-03 Tasks 1-2 complete (unified corpus written + 8-point validation green); Task 3 human-verify checkpoint returned to orchestrator (NOT self-approved)
+last_updated: "2026-06-15T00:29:34.000Z"
+last_activity: 2026-06-15 -- Phase 06 plan 06-03 integration + verification done; awaiting human approval on unified corpus
 progress:
   total_phases: 10
   completed_phases: 4
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 06 (data-integration) — EXECUTING
-Plan: 2 of 3
-Status: Ready to execute
-Last activity: 2026-06-14 -- Phase 06 execution started
+Plan: 3 of 3 (Tasks 1-2 complete; Task 3 human-verify checkpoint pending user approval)
+Status: Phase 06 plan 06-03 unified corpus written + 8-point validation green; awaiting human approval
+Last activity: 2026-06-15 -- Phase 06 plan 06-03 integration + verification done
 
 Progress: [████░░░░░░] 42%
 
@@ -73,6 +73,7 @@ Progress: [████░░░░░░] 42%
 | Phase 04 P08 | 223 | 3 tasks | 4 files |
 | Phase 06 P01 | 846 | 3 tasks | 4 files |
 | Phase 06 P02 | 777 | 2 tasks | 3 files |
+| Phase 06 P03 | 2100 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,10 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 06 P02]: HIGH #5 idempotency via kaggle_input_dir separate path (default standard_dir/kaggle) -- integration reads Kaggle from a STABLE separate input, never its own output; byte-identical re-run proven by test_integration_is_idempotent.
 - [Phase ?]: [Phase 06 P02]: HIGH #6 cycle-3 + cycle-5 -- validate-before-swap via tempfile.mkdtemp staging + DEDICATED _commit_staging swap function. Transactionality model ACCURATELY described as 'validate-before-swap with idempotent recovery' (NOT perfectly atomic; mid-swap crash recoverable via re-run since integration reads only from immutable inputs). Cycle-5 isolated test patches _commit_staging directly (NOT global os.replace) and mutates the race input to make the mixed-generation state observable.
 - [Phase ?]: [Phase 06 P02]: HIGH #8b cycle-4 production fix + cycle-5 TEST ISOLATION -- hard-violation filter extended to 'duplicate' OR 'orphan' OR 'mismatch' OR '1-to-1'. The latter two tokens are load-bearing: 'horse_race_id mismatch: entry/result are not 1-to-1' at normalizer.py:330-334 contains NEITHER 'duplicate' NOR 'orphan'. Cycle-5 test uses DISJOINT unique horse_race_ids (entry=E1/S_E, result=R1/S_R); validate_integrity returns EXACTLY ONE violation containing 'mismatch' -- proving the token is the sole classifier.
+- [Phase 06 P03]: CYCLE-6 gate widening (commit 3c5b233, applied pre-execution) -- preflight month-set expected start widened from 2022-01 to 2021-08 because the actual D-06 scrape began 2021-08, filling the Kaggle gap (Kaggle ends 2021-07-31; boundary clean, no overlap). D-07 '実データ全部（2015-2026/5）' embraces the extra 2021-Q3/Q4 real data. 58 expected months. Preflight PASSED against real corpus (set equality, 0 missing, 0 extra, 0 invalid).
+- [Phase 06 P03]: UNIFIED CORPUS DELIVERED (DATA-05) -- integrate_standard_layer wrote race=38009 / entry=534953 / result=534953 rows (Kaggle 21929/311806/311806 + scraped 16080/223147/223147). Full 8-point run_all_validations overall_pass=True with UNIFIED source_stats. odds/payoff SHA-256 byte-identical pre/post (D-05). per-period graded: kaggle=893, scraped=578 (both match grade-regex). EXPECTED_FLOOR '2026-05-01' satisfied (actual_scraped_max=2026-05-31); 202605 partition non-empty (322 rows). PK-set union equality for all 3 tables. RULE 1 fix in validate_schema_conformance: case-insensitive 'float' substring so pandas nullable Float64 (Phase 4 cycle-3 #1 authority for nullable-int fields) is accepted.
+- [Phase 06 P03]: D-07 scope LOCKED at 2015-2026/5 (actual_scraped_max=2026-05-31). ROADMAP success criterion #3 still reads '2015-2024' -- text update DEFERRED to Phase 9 per 06-CONTEXT.md Deferred Ideas. D-07 takes precedence as the LOCKED contract.
+- [Phase 06 P03]: DEFERRED to Phase 3 re-run -- feature_generator TypeError (np.select empty condlist) on the larger unified corpus; 2 tests fail in tests/pipeline/test_feature_generator.py. Owning phase = Phase 3 (explicitly deferred per 06-CONTEXT.md). Corpus itself is correct (8-point validation green). See .planning/phases/06-data-integration/deferred-items.md.
 
 ### Pending Todos
 
@@ -161,6 +166,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-14T14:07:01.754Z
-Stopped at: Phase 6 plan 06-01 complete — Kaggle D-01/D-02 reconciliation done; data/standard/kaggle/ subdir ready for 06-02 integration
-Resume file: .planning/phases/06-data-integration/06-01-SUMMARY.md
+Last session: 2026-06-15T00:29:34.000Z
+Stopped at: Phase 6 plan 06-03 Tasks 1-2 complete (unified corpus written + 8-point validation green); Task 3 human-verify checkpoint returned to orchestrator (NOT self-approved)
+Resume file: .planning/phases/06-data-integration/06-03-SUMMARY.md
