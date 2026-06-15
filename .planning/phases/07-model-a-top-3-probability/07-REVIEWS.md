@@ -1,181 +1,144 @@
 ---
 phase: 07
 reviewers: [codex]
-reviewed_at: 2026-06-15T12:30:23Z
-cycle: 3
-previous_cycle_high_count: 4
-current_cycle_high_count: 1
+reviewed_at: 2026-06-15T12:51:55Z
+cycle: 4
+previous_cycle_high_count: 1
+current_cycle_high_count: 0
 plans_reviewed:
-  - 07-01-PLAN.md
-  - 07-02-PLAN.md
   - 07-03-PLAN.md
-  - 07-04-PLAN.md
-  - 07-05-PLAN.md
-  - 07-06-PLAN.md
-  - 07-07-PLAN.md
-  - 07-08-PLAN.md
 ---
 
-# Cross-AI Plan Review — Phase 07 (Model A: Top-3 Probability) — CYCLE 3 (FINAL)
+# Cross-AI Plan Review — Phase 07 (Model A: Top-3 Probability) — CYCLE 4 (CONVERGENCE)
 
-> **Convergence loop — Cycle 3 of 3.** The second replan targeted the 4 HIGHs that Cycle 2 left open. This cycle verifies resolution of those 4 HIGHs and surfaces any NEW HIGH-severity concerns introduced by the revisions.
+> **Convergence loop — Cycle 4 of 4.** Cycles 1-3 resolved 10 of 11 HIGHs. Cycle 3 left exactly 1 HIGH: same-day fold boundaries would halt the production 5-fold CV run because `07-03` chunked by race count while asserting strict `max(train_dates) < min(val_dates)`, and JRA has multiple races per `race_date` without exception (mean 30.75 races/date, zero single-race dates over 23,288 training races / 1,236 unique dates).
 >
-> **Reviewers invoked:** Codex (Claude skipped — this review was orchestrated from inside the Claude Code runtime, so an independent Claude session would not be truly independent).
+> The Cycle 4 replan made a **TARGETED edit to `07-03-PLAN.md` ONLY** (commit `d75ae06`, +49/-29 lines, single file). No other plan was touched. Chunking is now **date-block-aware** — boundaries are drawn on an ordered unique `race_date` array so no `race_date` is ever split across a train/val boundary, making `max(train_dates) < min(val_dates)` hold by construction. A regression test `test_same_date_not_split_across_fold_boundary` was added.
 >
-> **Scope:** All 8 revised plans for Phase 7. Review focus: (a) verify each Cycle-2 HIGH is actually implemented in the revised plan text (not just mentioned), (b) detect new structural problems introduced by the revisions (temporal-assertion vs chunk-boundary interaction, sentinel branches, `oof_rows` contract, ROADMAP alignment).
+> **Reviewers invoked:** Codex (Claude skipped — orchestrated from inside the Claude Code runtime, so an independent Claude session would not be truly independent).
 >
-> **Orchestrator data verification:** The orchestrator independently confirmed against `data/feature/features_train.parquet` that JRA has **multiple races per `race_date` without exception** — 23,288 training races across only 1,236 unique dates (10-36 races/date, mean 30.75, **zero single-race dates**). This is load-bearing evidence for the one remaining HIGH and was cross-checked rather than taken on faith.
+> **Scope:** Verification that the single Cycle-3 HIGH is now FULLY RESOLVED, and that the date-block fix introduced no NEW HIGH-severity concern (execution-halt or calibration-leakage). The other 7 plans passed Cycle 3 and are not re-litigated.
 
 ---
 
-## Cycle-2 HIGH Resolution Verdicts (Codex + orchestrator cross-check)
+## Cycle-3 HIGH Resolution Verdict (Codex + orchestrator cross-check)
 
-| # | Cycle-2 HIGH concern | Verdict | Evidence in revised plan text |
-|---|---|---|---|
-| **#1** | Temporal-order assertion was dead code on the execution path | **PARTIALLY RESOLVED** | The dead-code defect itself is fixed: `07-02` Task 1 `sort_values(["race_date","race_id","horse_number"]).reset_index(drop=True)` + `is_monotonic_increasing` assert + retains the `race_date` column; `07-03` Task 1 `split(X, y, groups, dates=None)` takes `dates` as an explicit arg and asserts `max(dates[train_idx]) < min(dates[val_idx])` whenever `dates` is passed (independent of `X` columns); `07-04` Task 1 `collect_oof_predictions` calls `splitter.split(X, y, groups=race_ids, dates=df["race_date"])`, with `test_collect_oof_passes_dates_to_splitter` spy-verifying the forwarding. The assertion is now live on the real path. **BUT the strict `<` assertion conflicts with race-count-based chunking** (see NEW HIGH below) and will halt the production 5-fold run. The fix solved the dead-code problem and introduced a real halt defect; net verdict PARTIALLY RESOLVED. |
-| **#2** | `expected_counts` bypass sentinel inconsistent (`{}` spec vs `[]` call sites) | **FULLY RESOLVED** | `07-02` Task 1: unified sentinel `None`=production assert / `[]` (empty list)=bypass / non-empty dict=custom / `{}` (empty dict) rejected with TypeError; branch logic `if expected_counts is None: …; elif isinstance(expected_counts, list) and len==0: bypass; elif isinstance(expected_counts, dict): custom; else: TypeError`; acceptance criterion `grep -cE "expected_counts == \{\}" … == 0`. `07-07` run_train signature `expected_counts: dict | list | None = None` forwards identically; hermetic E2E calls `expected_counts=[]`; T-07-07-10 threat entry documents the contract. Consistent across spec/signature/tests/run_train/E2E. |
-| **#3** | `oof_rows` never written to `metrics.json` by run_train | **FULLY RESOLVED** | `07-07` Task 2 **Step 9b** explicitly writes `metrics["oof_rows"] = int(len(oof_df))` before serialization; acceptance `grep -cE "metrics\[.oof_rows.\]" … >= 1`; `test_oof_parquet_schema_and_row_count` asserts `metrics.json` `oof_rows` exists, is int, and equals the OOF parquet row count. `07-08` Task 1 verify asserts `'oof_rows' in m` and `m['oof_rows'] < 322510`. Producer (`07-07`)/consumer (`07-08`) contract identical: key=`oof_rows`, type=`int`, computation=`len(oof_df)`. |
-| **#4** | ROADMAP success criteria diverged from LOCKED decisions (D-05/D-07/D-08) | **FULLY RESOLVED** | `ROADMAP.md` Phase 7 section verified updated: criterion #1 = "trained on **2018-2024 data** with temporal splits (D-05/D-01)"; criterion #3 = baseline on **holdout** as **reference information**, explicitly "beating the baseline is NOT a required success gate"; criterion #2 references temporal-order enforcement (Cycle-2 HIGH #1); criterion #4 references `oof_rows` recording (Cycle-2 HIGH #3). Stale "2015-2023" / "beat baseline on OOF" wording is gone. ROADMAP text now literally matches the plans' LOCKED decisions. |
+| Cycle-3 HIGH concern | Verdict | Plan-text evidence |
+|---|---|---|
+| **Same-day fold boundaries will halt the production 5-fold run** (`07-03` chunked by race count while asserting strict `max(train_dates) < min(val_dates)`; JRA has multiple races per date without exception) | **FULLY RESOLVED** | `07-03` Task 1, action (2): `unique_dates = pd.unique(dates)` obtained in occurrence order (caller sorts by `race_date` ascending, guaranteed by `07-02` `sort_values([...])` + `is_monotonic_increasing` assert). `_compute_date_block_sizes(n_dates)` divides the ordered unique-date array into `n_splits+1` date-block chunks (each chunk is a complete block of dates; no date is split). `date_boundaries = np.cumsum(date_block_sizes)` indexes the ordered-date array, NOT race counts. Per fold `i`: `val_dates_block = unique_dates[val_start:val_end]` is a complete date block; `train_dates_block = unique_dates[:val_start]` is the cumulative/expanding-window set of earlier date blocks (warm-up chunk 0 always included, non-empty since base >= 1). Same `race_date` → same chunk by construction → `set(train_dates) & set(val_dates) == empty` for every fold → since dates are ordered ascending, `max(train_dates) < min(val_dates)` is a genuine invariant. Strict assertion never raises on the production path. Regression test `test_same_date_not_split_across_fold_boundary` (Task 2) uses a fixture where **every date has multiple races** (JRA's universal case) and asserts both (a) no date appears in both train and val of any fold, and (b) the strict assertion never raises. Threat register T-07-03-05 documents the mitigation. |
 
-**Cycle-2 tally: 3 of 4 HIGHs FULLY RESOLVED; 1 PARTIALLY RESOLVED (#1 — the fix introduced a new halt defect).**
+**Cycle-3 tally: 1 of 1 HIGH FULLY RESOLVED.**
+
+### Orchestrator independent cross-check (why the fix is correct, not just present)
+
+1. **Boundary indexing — no off-by-one.** `date_block_sizes` has `n_splits+1` elements; `date_boundaries = np.cumsum(...)` has `n_splits+1` cumulative sums, the last equal to `n_dates`. For folds `i = 0..n_splits-1`, both `date_boundaries[i]` and `date_boundaries[i+1]` are valid. `val_start = date_boundaries[i]`, `val_end = date_boundaries[i+1]`. Correct.
+
+2. **Expanding-window / cumulative train preserved.** `train_dates_block = unique_dates[:val_start]` = chunks 0..i (warm-up + all earlier val chunks). Fold 0 train = chunk 0 = `unique_dates[:date_boundaries[0]]`, non-empty. Codex HIGH #1 (fold-0 empty train) regression intact.
+
+3. **Same-race invariant preserved.** date-block → race_id expansion is atomic; `np.isin(groups, ...)` keeps every row of a `race_id` together. test_same_race_same_fold and test_no_boundary_split still apply.
+
+4. **`n_dates < n_splits+1` ValueError cannot fire on production data.** 1,236 unique dates ≫ 6 chunks.
+
+5. **Strict `<` holds by construction.** train dates and val dates are disjoint slices of an ascending-ordered unique-date array; `max(train_dates) < min(val_dates)` necessarily.
+
+6. **Scope confirmed** via `git show d75ae06 --stat`: only `07-03-PLAN.md` changed (+49/-29). The other 7 plans' Cycle-1/2/3 resolutions are untouched.
 
 ---
 
 ## Codex Review
 
-### 1. Cycle-2 HIGH Resolution Verdicts
+### 1. Cycle-3 HIGH Resolution Verdict
 
-| # | concern | verdict | plan-text evidence |
-|---|---|---|---|
-| 1 | Temporal-order assertion was dead code | **PARTIALLY RESOLVED** | `07-02 Task 1`: `sort_values(["race_date", "race_id", "horse_number"])` and retaining `race_date`. `07-03 Task 1`: `split(..., dates=None)` and `assert max(dates[train_idx]) < min(dates[val_idx])`. `07-04 Task 1`: `splitter.split(..., dates=df["race_date"])`. The assertion is now live, but chunk boundaries are still computed by race count and may split races from the same `race_date`, causing the strict `<` assertion to halt execution. |
-| 2 | `expected_counts` sentinel inconsistency | **FULLY RESOLVED** | `07-02 Task 1`: "`None`=production assert / `[]`=bypass / non-empty dict=custom" and "`{}`（空 dict）は受け付けない". `07-07 run_train`: identical signature and forwarding, with hermetic E2E calling `expected_counts=[]`. |
-| 3 | `oof_rows` missing from `metrics.json` | **FULLY RESOLVED** | `07-07 Task 2, Step 9b`: `metrics["oof_rows"] = int(len(oof_df))`. `07-07 Task 3`: test compares the JSON value with the actual OOF parquet row count. `07-08 Task 1`: verifies `'oof_rows' in m` and OOF rows `< 322510`. |
-| 4 | ROADMAP criteria diverged from LOCKED decisions | **FULLY RESOLVED** | `ROADMAP Phase 7 Success Criteria #1`: "trained on **2018-2024 data**". Criterion #3: baseline comparison on **holdout as reference information**, explicitly not a required gate. Criteria #2 and #4 also mention temporal enforcement and `oof_rows`. |
+| Verdict | Plan-text evidence |
+|---|---|
+| **FULLY RESOLVED** | Chunks are explicitly computed from ordered `unique_dates`, not race counts (`07-03-PLAN.md:101`). Boundaries use cumulative date-block sizes, with train=`unique_dates[:date_boundaries[i]]` and validation=`unique_dates[date_boundaries[i]:date_boundaries[i+1]]` (`07-03-PLAN.md:103`). Therefore dates cannot straddle a boundary and strict `<` holds for sorted input. |
 
 ### 2. Summary
 
-Three carry-over HIGHs are fully resolved. The temporal assertion is correctly connected to the real trainer path, but its strict date comparison conflicts with race-count chunking: a fold boundary falling inside one race day will cause an assertion failure. This leaves one unresolved HIGH and blocks implementation approval until date-block boundaries are specified.
+The targeted Cycle-3 HIGH is fully resolved in the plan. The boundary indexing is correct, expanding-window training remains cumulative, race IDs are expanded atomically from date blocks, and the real dataset's 1,236 dates safely exceeds the required six chunks. No new HIGH-severity execution-halt or calibration-leakage issue was introduced.
 
 ### 3. Strengths
 
-- Producer/consumer contracts are explicit across `07-02`, `07-04`, `07-07`, and `07-08`.
-- OOF warm-up exclusion is consistently reflected in training, calibration, artifacts, and verification.
-- Final-model training correctly uses two stages and refits on all 2018–2024 rows.
-- Holdout calibration and retuning restrictions preserve the calibration guarantee.
-- ROADMAP criteria now match D-05, D-07, and D-08.
+- `val_start=date_boundaries[i]` and `val_end=date_boundaries[i+1]` correctly select chunk `i+1`.
+- Fold 0 trains on complete chunk 0; subsequent folds accumulate all earlier chunks.
+- `np.isin(groups, ...)` keeps every row of a `race_id` together.
+- The regression test explicitly checks date-set disjointness and successful strict ordering (`07-03-PLAN.md:153`).
+- `n_dates < n_splits+1` cannot trigger on the verified production data.
 
 ### 4. Concerns
 
-- **[HIGH|new] Same-day fold boundaries can halt CV.**
-  `07-03` creates chunks from ordered `race_id` counts, not unique `race_date` blocks, while asserting `max(train_dates) < min(val_dates)`. JRA has multiple races per date, so a boundary can place races from the same date on both sides and fail the strict assertion.
-
-- **[MEDIUM|new] Empty-dict rejection should be made algorithmically explicit.**
-  `07-02 Task 1` shows `elif isinstance(expected_counts, dict): <custom assert>`, while separately requiring `{}` to raise `TypeError`. Add a non-empty condition to remove implementation ambiguity.
-
-- **[MEDIUM|new] Gated-test invocation is inconsistent.**
-  Plans register a `gated` marker and mention `RUN_GATED=1`, but verification commands use `--run-gated`; no pytest option registration is planned.
-
-- **[MEDIUM|new] Early-stopping tests may be nondeterministic.**
-  Requiring `best_iteration_ < 50` on a tiny synthetic dataset does not guarantee early stopping will fire.
-
-- **[LOW] Artifact counts are described as six although seven files are individually verified.**
+- **[MEDIUM|new]** The legacy `dates=None` path is underspecified. When `X` lacks `race_date`, the plan says assertion is skipped, but the algorithm still immediately calls `pd.unique(dates)` (`07-03-PLAN.md:100`). This conflicts with the claimed backward compatibility, although production always supplies `dates`.
+- **[LOW|new]** The regression fixture's "4-5 races per date" is not deterministic enough to guarantee that the old race-count algorithm would split a date. Equal counts could accidentally align boundaries.
+- **[LOW|new]** The race ID to date mapping assumes, but does not explicitly validate, that one `race_id` never maps to multiple dates.
 
 ### 5. Suggestions
 
-1. In `07-03`, construct chunks from complete `race_date` blocks, then map those date blocks back to race IDs. Never split one date across train and validation.
-2. Add a regression test with multiple races on the boundary date and verify strict temporal order without an assertion failure.
-3. Specify the sentinel branch as:
-   ```python
-   elif isinstance(expected_counts, dict) and expected_counts:
-       ...
-   else:
-       raise TypeError(...)
-   ```
-4. Either implement a `--run-gated` pytest option or consistently use `RUN_GATED=1`.
-5. Test callback configuration and `best_iteration_` validity without requiring early stopping to occur on every synthetic fixture.
+1. Require `dates` when `X` lacks `race_date`, raising a clear `ValueError`; remove the ambiguous "assertion only is skipped" behavior.
+2. Use deliberately uneven race counts per date (e.g. `[4, 5, 4, 5, 4, 5]`) so the old race-count splitter necessarily fails the regression test.
+3. Validate that each `race_id` maps to exactly one `race_date`.
 
 ### 6. Risk Assessment
 
-**HIGH.** Calibration and artifact contracts are otherwise strong, but the current splitter can halt the real five-fold training run whenever a chunk boundary falls within a racing date.
+**LOW.** The production path and targeted date-boundary invariant are correctly specified. Remaining issues concern legacy behavior and test robustness, not production execution or calibration leakage.
 
-### 7. Per-Plan Notes
+### 7. Convergence Status
 
-- **07-01:** Sound environment and test scaffolding; gated execution convention needs alignment.
-- **07-02:** Correct sorting, date retention, leakage audit, and sentinel contract.
-- **07-03:** Live temporal assertion added, but chunking must preserve whole `race_date` blocks.
-- **07-04:** Correctly forwards `dates` and excludes warm-up rows from OOF.
-- **07-05:** OOF-only isotonic calibration contract is coherent.
-- **07-06:** Evaluation and reference-only popularity baseline match locked decisions.
-- **07-07:** Integration contracts, `oof_rows`, and hermetic bypass are well specified.
-- **07-08:** Phase gate is comprehensive and correctly prohibits holdout retuning.
+**Unresolved HIGHs: 0**
 
-### 8. Convergence Status
-
-**UNRESOLVED HIGHs: 1**
-
-**Recommendation: NO-GO** until `07-03` defines date-block-aware fold boundaries and adds a same-date boundary regression test.
+**Recommendation: GO** for implementation.
 
 ---
 
 ## Orchestrator Cross-Check (Claude Code)
 
-The orchestrator independently verified Codex's single HIGH against the plan text and the real data, because the HIGH blocks the production run and must not be inflated or under-reported.
+The orchestrator independently verified Codex's FULLY-RESOLVED verdict by reading the `07-03` plan text line-by-line (action steps, assertions, test, threat model, acceptance criteria) and confirming the boundary/indexing/expanding-window logic is not only present but correct. Findings reinforce rather than contradict Codex.
 
-### Why Codex's HIGH is valid (not a misreading)
+### Why the 3 new concerns are correctly below the HIGH bar
 
-1. **Plan text (`07-03` Task 1, action step (2)):** `_compute_fold_sizes(n_groups)` computes chunk sizes by **race count** — `base = n_groups // (n_splits + 1), rem = n_groups % (n_splits + 1), return [base + (1 if i < rem else 0) for i in range(n_splits + 1)]`. Boundaries are `np.cumsum(fold_sizes)` on the ordered `unique_groups` array. Nothing in the algorithm references `race_date` when drawing boundaries. The Cycle-1 Codex *suggestion* "Optionally block same-race_date into the same time block" (quoted in `07-03` `read_first`) was **not implemented**.
+- **MEDIUM — legacy `dates=None` path underspecified (Codex).** Real plan-text inconsistency: `07-03` line 100-101 says "if `dates` is None and X has `race_date`, use it" but then line 101 unconditionally calls `pd.unique(dates)` which would raise `TypeError` on `None`. This lives entirely on the **legacy/unused** code path — the production trainer (`07-04` `collect_oof_predictions`) always passes `dates=df["race_date"]`, and the hermetic E2E (`07-07`) passes it too. No execution-halt of the production pipeline, no calibration leakage. Fair MEDIUM; the executor should tighten this (Codex suggestion #1: require `dates` when X lacks `race_date`, raise ValueError instead of silently skipping the assertion).
+- **LOW — regression fixture race-count determinism (Codex).** A robustness nit on the test fixture, not a defect in the fix. The test still validates the invariant (date-set disjointness + assertion-never-raises) regardless of whether it would *also* catch a hypothetical race-count regression. Below HIGH.
+- **LOW — race_id → single-date assumption not explicitly validated (Codex).** The mapping is built by `zip(groups, dates)` into a dict; if a `race_id` appeared under two dates, the dict would silently keep the last. In JRA data `race_id` is globally unique to one date (it encodes the date), so this is a data invariant rather than a plan defect. A defensive assert in the executor would be nice-to-have.
 
-2. **Plan text (assertion):** `assert max(dates[train_idx]) < min(dates[val_idx])` is **strict `<`**. It fires per fold whenever `dates` is passed, and `07-04` always passes `dates=df["race_date"]` on the real path.
+### Carry-over MEDIUMs from earlier cycles (unchanged, below HIGH)
 
-3. **Real data (`data/feature/features_train.parquet`, verified by the orchestrator):** 23,288 training races span only **1,236 unique `race_date`s**. Every date has **10-36 races** (mean 30.75). **There are zero single-race dates in JRA.** Multiple races per date is not an edge case — it is the universal case.
+- `--run-gated` flag not registered as a pytest option (only the `gated` marker + `RUN_GATED=1` env var exist) — test-runner friction, not a production halt.
+- D-09 race-level Top-3 recall still listed in `07-06` `read_first` but not returned by `evaluate()`.
+- Empty-dict sentinel branch ambiguity (`elif isinstance(expected_counts, dict)` should be `and expected_counts`).
+- Early-stopping test (`best_iteration_ < n_estimators`) may be nondeterministic on tiny fixtures.
 
-4. **Consequence:** With 6 chunks over 1,236 dates (~206 dates/chunk) and 5 internal boundaries drawn at arbitrary race indices, the probability that all 5 boundaries land exactly on a date boundary is effectively zero. On the real 5-fold run, at least one fold will split races from a shared date, `max(train_dates) == min(val_dates)`, and the strict `<` assertion raises `AssertionError`, halting `python -m src.ml.run_train` in `07-08` Task 1. This is an **execution-halt defect on the production pipeline** — a genuine HIGH by the severity bar (execution halt).
-
-5. **Was this flagged before?** Yes. Cycle 2 Codex raised it as a **MEDIUM** ("Same-`race_date` races can straddle a chunk boundary … makes the date assertion unachievable"). It was **not addressed** in the second replan. The Cycle-2 HIGH #1 fix (making the assertion live on the real path) **promoted** this latent issue: in Cycle 2 the assertion was dead code so the straddle was theoretical; in Cycle 3 the assertion is live, so the straddle halts execution. This is a legitimate escalation **introduced by the HIGH #1 fix**, correctly classified `[HIGH|new]`.
-
-### Minimal fix (small, localized — does not invalidate the design)
-
-In `07-03`, change `_compute_fold_sizes` and the boundary loop to be **date-block-aware**: group `unique_groups` by their `race_date`, draw chunk boundaries on the ordered list of unique `race_date`s (so each `race_date` block is atomic), then expand each date block to its constituent `race_id`s. Add a regression test (`test_same_date_not_split_across_boundary`) that constructs a fixture with multiple races on a candidate boundary date and asserts the strict `max(train_dates) < min(val_dates)` passes. The `n_splits+1` warm-up contract, OOF-excludes-warm-up contract, and all other Cycle-1/Cycle-2 fixes are unaffected.
-
-### Verdict on the other 3 carry-over HIGHs
-
-Cross-checked independently by reading the plan text — all three are FULLY RESOLVED as Codex states. Evidence summarized in the verdict table above.
-
-### MEDIUMs (carry-over, fair, below the HIGH bar)
-
-- **`--run-gated` not registered as a pytest option** (carry-over from Cycle 2 MEDIUM). `07-01` Task 2 adds the `gated` *marker* to `[tool.pytest.ini_options] markers` and references `RUN_GATED=1`, but no `pytest_addoption` / skip-hook for the `--run-gated` *flag* is planned. The gated verify commands use `--run-gated 2>/dev/null || echo "gated tests require RUN_GATED=1"`, so the env-var path still works and the phase is not blocked, but a stray `--run-gated` without the option registered would error. Test-runner friction only; no execution halt of the production path, no leakage.
-- **D-09 race-level Top-3 recall** still listed in `07-06` `read_first` but not returned by `evaluate()` (carry-over from Cycle 1/2 MEDIUM). No regression vs Cycle 2.
-- **Empty-dict branch ambiguity** (Codex MEDIUM #2) and **early-stopping test nondeterminism** (Codex MEDIUM #4) — fair, small edits, below HIGH.
+None of these are execution-halt or calibration-leakage. They are not counted.
 
 ---
 
 ## Consensus Summary
 
-> Single reviewer (Codex) plus orchestrator cross-check. The single HIGH was independently validated by the orchestrator against the real feature parquet (1,236 unique dates, mean 30.75 races/date, zero single-race dates) and the `07-03` plan text.
+> Single reviewer (Codex) plus orchestrator cross-check. The single Cycle-3 HIGH was independently validated by the orchestrator against the `07-03` plan text and the real feature parquet (1,236 unique dates, mean 30.75 races/date, zero single-race dates). The Cycle 4 targeted edit fully closes it.
 
-### Agreed Strengths (plan text + reviewer + orchestrator)
+### Agreed Strengths
 
-- 3 of 4 Cycle-2 HIGHs are fully implemented in the revised plan text (`expected_counts` sentinel unification, `oof_rows` producer/consumer contract, ROADMAP alignment with D-05/D-07/D-08).
-- The temporal-order assertion is genuinely live on the real execution path (sort + `dates` explicit arg + forwarding) — the dead-code defect from Cycle 2 is solved.
-- OOF warm-up exclusion is consistent end-to-end (07-03 chunks → 07-04 collect → 07-05 calibrate → 07-07/08 assert `< 322510`).
-- Two-stage full retrain (Stage 1 best_iteration → Stage 2 refit on all rows) and holdout retune prohibition are intact.
+- The date-block-aware chunking is genuinely present and correct in the plan text: boundaries index an ordered unique-date array, each date block is atomic, and `max(train_dates) < min(val_dates)` is a genuine invariant.
+- Boundary indexing (`val_start=date_boundaries[i]`, `val_end=date_boundaries[i+1]`) has no off-by-one; cumulative/expanding-window train including warm-up chunk 0 is preserved.
+- The regression test fixture (all-multi-race dates) directly exercises the universal JRA case and asserts both the invariant and assertion-non-raising.
+- The Cycle 4 edit was correctly scoped — only `07-03-PLAN.md` changed; the other 7 plans' prior resolutions are untouched.
 
-### Agreed Concerns (highest priority — Cycle 3)
+### Agreed Concerns (all below HIGH)
 
-1. **[HIGH, new — introduced by the Cycle-2 HIGH #1 fix] Same-day fold boundaries will halt the production 5-fold run.** `07-03` chunks by race count while asserting strict `max(train) < min(val)` on `race_date`; JRA has multiple races per date without exception, so a boundary lands inside a date and the assertion fires. *Fix: date-block-aware chunking + same-date boundary regression test.*
-2. **[MEDIUM, new] Empty-dict sentinel branch is ambiguous** — `elif isinstance(expected_counts, dict)` should be `and expected_counts`.
-3. **[MEDIUM, carry-over] `--run-gated` flag not registered** as a pytest option (only the `gated` marker + `RUN_GATED=1` env var exist).
-4. **[MEDIUM, new] Early-stopping test (`best_iteration_ < n_estimators`) may be nondeterministic** on tiny fixtures.
-5. **[MEDIUM, carry-over] D-09 race-level Top-3 recall** still not returned by `evaluate()`.
-6. **[LOW] Artifact count described as "6" but 7 files verified individually.**
+1. **[MEDIUM|new] Legacy `dates=None` path is underspecified** — line 100-101 inconsistency; production path unaffected.
+2. **[LOW|new] Regression fixture race counts could accidentally align** — test-robustness nit.
+3. **[LOW|new] `race_id`→single-date assumption not explicitly validated** — data invariant, not a plan defect.
+4. **[MEDIUM|carry-over] `--run-gated` not a registered pytest option.**
+5. **[MEDIUM|carry-over] D-09 race-level Top-3 recall not returned by `evaluate()`.**
+6. **[MEDIUM|carry-over] Empty-dict sentinel branch ambiguity.**
+7. **[MEDIUM|carry-over] Early-stopping test nondeterminism.**
+8. **[LOW|carry-over] Artifact count "6" vs 7 files verified.**
 
 ### Divergent Views
 
-- None material. The orchestrator's independent data verification reinforces rather than contradicts Codex's single HIGH.
+- None. The orchestrator's independent verification reinforces rather than contradicts Codex's FULLY-RESOLVED verdict and GO recommendation.
 
 ### Convergence Status
 
-- **Cycle-2 HIGHs:** 3 FULLY RESOLVED, 1 PARTIALLY RESOLVED (#1 — the dead-code fix is correct but introduced a date-boundary halt defect).
-- **Cycle-3 NEW HIGHs:** 1 (same-date fold boundary; introduced by the Cycle-2 HIGH #1 fix).
-- **Remaining unresolved HIGH count: 1.**
-- **Recommendation:** One small, localized edit to `07-03` (date-block-aware chunking + regression test) closes the final HIGH. The fix does not disturb any other Cycle-1/Cycle-2 resolution. After that edit, Phase 7 is GO for implementation.
+- **Cycle-3 HIGH:** 1 FULLY RESOLVED (date-block-aware chunking).
+- **Cycle-4 NEW HIGHs:** 0.
+- **Remaining unresolved HIGH count: 0.**
+- **Recommendation:** Phase 7 is **GO** for implementation. All 11 HIGHs raised across Cycles 1-3 are now FULLY RESOLVED in the plan text. The remaining items are MEDIUM/LOW and are the executor's responsibility to tighten during implementation.
