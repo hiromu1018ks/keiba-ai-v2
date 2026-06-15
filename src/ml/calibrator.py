@@ -140,9 +140,23 @@ def apply_calibrator(
     numpy.ndarray, shape (n,)
         Calibrated probabilities in [0.0, 1.0], monotonic non-decreasing in
         ``raw_preds``. Extrapolation beyond the fit input range is clipped to
-        the boundary calibrated values.
+        the boundary calibrated values. An empty input returns an empty
+        output (WR-02).
+
+    Raises
+    ------
+    Nothing — empty input is handled gracefully (WR-02) to stay consistent
+    with the trainer's OOF contract (``collect_oof_predictions`` may return
+    an empty DataFrame on degenerate input, and run_train applies the
+    calibrator to OOF rows at line ~294).
     """
     raw_preds = np.asarray(raw_preds, dtype=float)
+    if raw_preds.size == 0:
+        # WR-02: sklearn's check_array raises "Found array with 0 sample(s)"
+        # on empty input. Mirror the trainer's empty-OOF contract (return
+        # empty) so run_train Step 7 / OOF parquet write do not crash on
+        # degenerate folds or empty hermetic fixtures.
+        return raw_preds
     return iso.predict(raw_preds)
 
 
