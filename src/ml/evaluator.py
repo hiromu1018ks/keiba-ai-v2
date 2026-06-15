@@ -94,6 +94,57 @@ def compute_ece(
     return float(ece)
 
 
+def _safe_auc(y_true: np.ndarray, y_prob: np.ndarray) -> Optional[float]:
+    """AUC guard for single-class ``y_true`` (CR-01).
+
+    ``roc_auc_score`` returns ``nan`` (with ``UndefinedMetricWarning``) when
+    ``y_true`` contains only one class. That ``nan`` would propagate into the
+    metrics dict and be serialised as the non-standard JSON literal ``NaN``
+    by ``run_train``'s ``json.dump``, breaking strict JSON consumers (jq,
+    Node.js ``JSON.parse``, pyarrow ``read_json``, Phase 8/9 / 07-08 verify).
+
+    Returns ``None`` on single-class input (the JSON-serialisable sentinel
+    for "AUC undefined"); otherwise the finite float AUC.
+
+    Single-class holdout is rare but reachable via subset evaluation
+    (e.g. grade-only race slices) and via degenerate hermetic fixtures.
+    Behaviour is UNCHANGED when both classes are present.
+    """
+    if len(np.unique(y_true)) < 2:
+        logger.warning(
+            "evaluate: single-class y_true "
+            f"(unique={np.unique(y_true).tolist()}, n={len(y_true)}) — "
+            "AUC undefined, returning None (CR-01: avoid nan -> non-standard JSON)"
+        )
+        return None
+    return float(roc_auc_score(y_true, y_prob))
+
+
+def _safe_logloss(
+    y_true: np.ndarray, y_prob: np.ndarray, label: str
+) -> Optional[float]:
+    """``log_loss`` guard for single-class ``y_true`` (CR-01 companion).
+
+    Unlike AUC, ``sklearn.log_loss`` does NOT return nan on single-class
+    input — it raises ``ValueError`` outright ("y_true contains only one
+    label"). That crash would propagate up through ``run_train`` and halt
+    the pipeline. Guard it the same way as AUC: return ``None`` (JSON
+    ``null``) on single-class input.
+    """
+    if len(np.unique(y_true)) < 2:
+        logger.warning(
+            f"evaluate: single-class y_true ({label}) — log_loss undefined, "
+            "returning None (CR-01)"
+        )
+        return None
+    return float(log_loss(y_true, y_prob))
+
+
+def _format_metric(value: Optional[float]) -> str:
+    """Format a metric for logging, tolerating ``None`` (CR-01)."""
+    return "n/a" if value is None else f"{value:.4f}"
+
+
 def evaluate(
     y_true: np.ndarray,
     y_prob_raw: np.ndarray,
@@ -114,18 +165,27 @@ def evaluate(
     Returns a dict with documented keys (analog: ``run_all_validations``
     dict-aggregation pattern in src/pipeline/validators.py). Phase 8/9
     consumes this dict directly.
+
+    CR-01 single-class safety: when ``y_true`` contains only one class,
+    ``auc_*`` and ``logloss_*`` are returned as ``None`` (NOT ``nan`` and
+    NOT a crash). ``roc_auc_score`` would otherwise return ``nan`` (which
+    ``json.dump`` emits as the non-standard ``NaN`` literal); ``log_loss``
+    would otherwise raise ``ValueError`` outright. ``brier_score_loss``
+    accepts single-class input and returns a finite float, so it is left
+    unchanged. ``ece_*`` are already guarded by ``compute_ece``. Behaviour
+    is UNCHANGED when both classes are present.
     """
     y_true_arr = np.asarray(y_true, dtype=float)
     y_prob_raw_arr = np.asarray(y_prob_raw, dtype=float)
     y_prob_cal_arr = np.asarray(y_prob_calibrated, dtype=float)
     n_samples = int(len(y_true_arr))
 
-    auc_raw = float(roc_auc_score(y_true_arr, y_prob_raw_arr))
-    auc_calibrated = float(roc_auc_score(y_true_arr, y_prob_cal_arr))
+    auc_raw = _safe_auc(y_true_arr, y_prob_raw_arr)
+    auc_calibrated = _safe_auc(y_true_arr, y_prob_cal_arr)
     brier_raw = float(brier_score_loss(y_true_arr, y_prob_raw_arr))
     brier_calibrated = float(brier_score_loss(y_true_arr, y_prob_cal_arr))
-    logloss_raw = float(log_loss(y_true_arr, y_prob_raw_arr))
-    logloss_calibrated = float(log_loss(y_true_arr, y_prob_cal_arr))
+    logloss_raw = _safe_logloss(y_true_arr, y_prob_raw_arr, "raw")
+    logloss_calibrated = _safe_logloss(y_true_arr, y_prob_cal_arr, "calibrated")
     ece_raw = compute_ece(y_true_arr, y_prob_raw_arr, n_bins=n_bins)
     ece_calibrated = compute_ece(y_true_arr, y_prob_cal_arr, n_bins=n_bins)
 
@@ -142,13 +202,13 @@ def evaluate(
     }
 
     logger.info(
-        "evaluate: n_samples={} auc(raw={:.4f} cal={:.4f}) "
-        "brier(raw={:.4f} cal={:.4f}) logloss(raw={:.4f} cal={:.4f}) "
+        "evaluate: n_samples={} auc(raw={} cal={}) "
+        "brier(raw={:.4f} cal={:.4f}) logloss(raw={} cal={}) "
         "ece(raw={:.4f} cal={:.4f})".format(
             n_samples,
-            auc_raw, auc_calibrated,
+            _format_metric(auc_raw), _format_metric(auc_calibrated),
             brier_raw, brier_calibrated,
-            logloss_raw, logloss_calibrated,
+            _format_metric(logloss_raw), _format_metric(logloss_calibrated),
             ece_raw, ece_calibrated,
         )
     )

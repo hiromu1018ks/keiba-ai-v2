@@ -49,6 +49,7 @@ Cycle-2 HIGH fixes:
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -239,9 +240,16 @@ def run_train(
         n_bins=config["evaluation"]["ece_bins"],
     )
     logger.info(
-        f"run_train: evaluation auc_calibrated={metrics['auc_calibrated']:.4f} "
-        f"ece_calibrated={metrics['ece_calibrated']:.4f} "
-        f"n_samples={metrics['n_samples']}"
+        "run_train: evaluation auc_calibrated={} "
+        "ece_calibrated={:.4f} n_samples={}".format(
+            (
+                f"{metrics['auc_calibrated']:.4f}"
+                if metrics['auc_calibrated'] is not None
+                else "n/a (single-class)"
+            ),
+            metrics['ece_calibrated'],
+            metrics['n_samples'],
+        )
     )
     ece_tolerance = float(config["evaluation"].get("ece_tolerance", 0.02))
     if metrics["ece_calibrated"] >= ece_tolerance:
@@ -329,9 +337,29 @@ def run_train(
     logger.info(f"run_train: saved reliability diagram -> {diagram_path}")
 
     # (6) metrics.json (includes oof_rows — Cycle-2 HIGH #3) + evaluation_report.md
+    #
+    # CR-01: ensure the file is STRICT JSON (RFC 8259). ``evaluate`` returns
+    # ``None`` (not ``nan``) for single-class AUC, but other floats may still
+    # be ``nan`` from degenerate inputs. ``allow_nan=False`` makes
+    # ``json.dump`` raise ``ValueError`` on any ``NaN``/``Infinity`` so a bug
+    # can never silently produce a non-standard literal (which breaks jq /
+    # Node ``JSON.parse`` / pyarrow ``read_json`` / Phase 8/9 consumers). We
+    # first normalise any residual nan/inf to ``None`` (-> JSON ``null``) so
+    # the file is always parseable while still flagging the metric as missing.
     metrics_path = report_dir / art.get("metrics_filename", "metrics.json")
+    metrics_for_json = {
+        k: (
+            None
+            if (isinstance(v, float) and (math.isnan(v) or math.isinf(v)))
+            else v
+        )
+        for k, v in metrics.items()
+    }
     with metrics_path.open("w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2, ensure_ascii=False, default=float)
+        json.dump(
+            metrics_for_json, f, indent=2, ensure_ascii=False,
+            allow_nan=False,
+        )
     logger.info(f"run_train: saved metrics.json -> {metrics_path}")
 
     report_path = report_dir / art.get(
