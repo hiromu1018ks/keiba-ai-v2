@@ -403,15 +403,34 @@ def train_final_model(
     # --- Stage 2: full retrain on ALL rows at best_iteration_val ---
     # Codex HIGH #6: Stage 2 sees the ENTIRE input frame, not the inner_train
     # subset. This is the "true full retrain" of D-15 / Open-Question-#3.
+    #
+    # CR-02: clamp n_estimators to a floor so the final artefact is never a
+    # near-untrained weak learner. early_stopping(stopping_rounds=50) can fire
+    # at very small iteration counts when the Stage-1 validation metric
+    # plateaus immediately (degenerate features, distribution shift, unlucky
+    # seed). Without a floor, the shipped models/phase7/model_a.lgb.txt could
+    # contain only 1-2 trees, silently destroying Phase 8 Harville EV and
+    # Phase 9 backtest ROI. Floor is conservative (10 trees) — large enough
+    # to avoid degeneracy, small enough that a genuinely-converged Stage-1
+    # (which would never be this low on real data) is not meaningfully changed.
+    MIN_FINAL_ITERATIONS = 10
+    final_n_estimators = max(int(best_iteration_val), MIN_FINAL_ITERATIONS)
+    if final_n_estimators != int(best_iteration_val):
+        logger.warning(
+            f"Stage 1 best_iteration_val={best_iteration_val} < floor "
+            f"{MIN_FINAL_ITERATIONS}; clamping Stage 2 n_estimators to "
+            f"{final_n_estimators} to avoid an under-fit final model (CR-02)"
+        )
     stage2_clf = _build_classifier(config)
-    # Override n_estimators with the Stage-1 best iteration and drop early
-    # stopping (the iteration count is now fixed; callbacks=log_eval only).
-    stage2_clf.set_params(n_estimators=int(best_iteration_val))
+    # Override n_estimators with the (clamped) Stage-1 best iteration and
+    # drop early stopping (the iteration count is now fixed; callbacks=log_eval only).
+    stage2_clf.set_params(n_estimators=final_n_estimators)
     X_all = df[feature_columns]
     y_all = df[target_col]
     logger.info(
         f"Stage 2: training on {len(df)} rows (ALL input rows, Codex HIGH #6) "
-        f"up to best_iteration_val={best_iteration_val}"
+        f"up to n_estimators={final_n_estimators} "
+        f"(Stage-1 best_iteration_val={best_iteration_val})"
     )
     stage2_clf.fit(
         X_all,
