@@ -142,6 +142,39 @@ def run_train(
         raise FileNotFoundError(f"run_train: config not found: {config_path}")
     with config_path.open("r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
+
+    # WR-06: validate required config keys up front with an actionable message.
+    # Many keys were accessed via bracket notation (config["data"]["..."]) deep
+    # inside the function, producing a low-level KeyError ('train_window') with
+    # no indication of what to fix. Optional keys (drop_columns, ece_tolerance,
+    # diagram_filename, etc.) stay on .get() with defaults; required keys are
+    # checked once here so a malformed config fails fast at the boundary.
+    _REQUIRED_CONFIG_KEYS = [
+        ("data",),
+        ("data", "feature_path"),
+        ("data", "train_window"),
+        ("data", "holdout_window"),
+        ("data", "entry_path"),
+        ("data", "target_column"),
+        ("data", "feature_columns"),
+        ("cv",),
+        ("cv", "n_splits"),
+        ("evaluation",),
+        ("evaluation", "ece_bins"),
+        ("artifacts",),
+    ]
+    for key_path in _REQUIRED_CONFIG_KEYS:
+        node = config
+        for k in key_path:
+            if not isinstance(node, dict) or k not in node:
+                dotted = ".".join(key_path)
+                raise KeyError(
+                    f"run_train: required config key '{dotted}' is missing or "
+                    f"not a mapping in {config_path}. Check the YAML against "
+                    f"config/phase7_model_a.yaml (D-14 config schema)."
+                )
+            node = node[k]
+
     seed = config.get("seed", 42)
     train_window = config["data"]["train_window"]
     holdout_window = config["data"]["holdout_window"]
