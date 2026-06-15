@@ -505,6 +505,104 @@ class TestGradeDetection:
             f"{out['race_flag_graded_stakes'].iloc[2]!r}"
         )
 
+    def test_kaggle_bare_grade_L_detected_as_listed_and_stakes(self) -> None:
+        """CR-01: grade='L' (bare, no parentheses) sets listed=True and stakes=True.
+
+        Kaggle's リステッド・重賞競走 column stores the bare token "L" for
+        Listed races (2,232 entry-rows 2015+ verified against the real CSV).
+        _LISTED_REGEX in flag_crosswalk.py requires "(L)"/"（L）"/"(リステッド)"
+        with PARENTHESES, so a bare L matches NEITHER _LISTED_REGEX nor
+        _STAKES_REGEX and was previously misclassified as
+        listed=False/stakes=False. _apply_grade_detection now classifies the
+        bare token directly (the L is unambiguous only as a top-level grade
+        token, not inside race_name).
+        """
+        from src.pipeline.kaggle_converter import _apply_grade_detection
+
+        race_df = pd.DataFrame({
+            "grade": ["L", None],
+            "race_name": ["テストリステッド", "普通レース"],
+            **{
+                f"race_flag_{n}": pd.NA
+                for n in [
+                    "handicap", "age_restricted", "filly_only", "colt_only",
+                    "gelding_only", "mare_only", "stallion_only", "apprentice",
+                    "amateur", "female_jockey", "young_horse", "condition_race",
+                    "special_weight", "bonus_weight", "stakes", "graded_stakes",
+                    "listed", "open", "maiden", "allowance",
+                ]
+            },
+        })
+        for col in race_df.columns:
+            if col.startswith("race_flag_"):
+                race_df[col] = race_df[col].astype("boolean")
+
+        out = _apply_grade_detection(race_df.copy())
+
+        # Row 0: grade='L' -> listed=True AND stakes=True (a Listed race is a stakes)
+        assert bool(out["race_flag_listed"].iloc[0]) is True, (
+            f"grade='L' should set race_flag_listed=True (CR-01); got "
+            f"{out['race_flag_listed'].iloc[0]!r}"
+        )
+        assert bool(out["race_flag_stakes"].iloc[0]) is True, (
+            f"grade='L' should set race_flag_stakes=True (a Listed race is a "
+            f"stakes); got {out['race_flag_stakes'].iloc[0]!r}"
+        )
+        # A Listed race is NOT graded (G1/G2/G3). graded_stakes stays False/NA.
+        v0 = out["race_flag_graded_stakes"].iloc[0]
+        assert pd.isna(v0) or bool(v0) is False, (
+            f"grade='L' must NOT set race_flag_graded_stakes (Listed != graded); "
+            f"got {v0!r}"
+        )
+        # Row 1: grade=None -> no listed token. The OR-merge uses fillna(False)
+        # on both sides (see _apply_grade_detection docstring), so a non-Listed
+        # row gets a concrete False, NOT NA. Assert listed is falsy (False/NA).
+        v1 = out["race_flag_listed"].iloc[1]
+        assert pd.isna(v1) or bool(v1) is False, (
+            f"grade=None should NOT set race_flag_listed; got {v1!r}"
+        )
+
+    def test_kaggle_bare_grade_G_detected_as_graded_and_stakes(self) -> None:
+        """CR-02: bare grade='G' (110 Kaggle entry-rows) sets graded_stakes + stakes.
+
+        Kaggle stores the bare token "G" for 110 graded/stakes races where the
+        actual G1/G2/G3 level is encoded in race_name (e.g. ターコイズステークス,
+        葵ステークス). _GRADE_REGEX requires 2+ chars (GI/G1/...), so a bare G
+        matched neither _GRADE_REGEX nor _STAKES_REGEX and was previously
+        misclassified as graded_stakes=False/stakes=False.
+        """
+        from src.pipeline.kaggle_converter import _apply_grade_detection
+
+        race_df = pd.DataFrame({
+            "grade": ["G", None],
+            "race_name": ["ターコイズステークス", "普通レース"],
+            **{
+                f"race_flag_{n}": pd.NA
+                for n in [
+                    "handicap", "age_restricted", "filly_only", "colt_only",
+                    "gelding_only", "mare_only", "stallion_only", "apprentice",
+                    "amateur", "female_jockey", "young_horse", "condition_race",
+                    "special_weight", "bonus_weight", "stakes", "graded_stakes",
+                    "listed", "open", "maiden", "allowance",
+                ]
+            },
+        })
+        for col in race_df.columns:
+            if col.startswith("race_flag_"):
+                race_df[col] = race_df[col].astype("boolean")
+
+        out = _apply_grade_detection(race_df.copy())
+
+        # Row 0: grade='G' -> graded_stakes=True AND stakes=True
+        assert bool(out["race_flag_graded_stakes"].iloc[0]) is True, (
+            f"grade='G' should set race_flag_graded_stakes=True (CR-02); got "
+            f"{out['race_flag_graded_stakes'].iloc[0]!r}"
+        )
+        assert bool(out["race_flag_stakes"].iloc[0]) is True, (
+            f"grade='G' should set race_flag_stakes=True (a graded stakes is a "
+            f"stakes); got {out['race_flag_stakes'].iloc[0]!r}"
+        )
+
     def test_grade_detection_preserves_existing_true(self) -> None:
         """WARNING-2: OR-merge never downgrades an existing True to None.
 

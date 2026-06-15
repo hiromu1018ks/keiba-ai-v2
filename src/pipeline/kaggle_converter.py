@@ -125,6 +125,46 @@ def _apply_grade_detection(race_df: pd.DataFrame) -> pd.DataFrame:
             derive_race_flags(race_condition=cond, race_name=name)
         )
 
+    # CR-01 + CR-02 (Phase 06 review): bare-grade-token classification.
+    #
+    # Kaggle stores grade tokens the regexes in flag_crosswalk.py do NOT match:
+    #   - bare "L" (2,232 entry-rows 2015+): _LISTED_REGEX requires "(L)" /
+    #     "（L）" / "(リステッド)" / "（リステッド）" with PARENTHESES, so a bare L
+    #     matches neither _LISTED_REGEX nor _STAKES_REGEX ("重賞"). The bare L is
+    #     unambiguous ONLY as a top-level grade token (Kaggle's
+    #     リステッド・重賞競走 column), not inside race_name — which is why this
+    #     fix lives HERE (where we know grade_val is the structured column) and
+    #     NOT inside flag_crosswalk._LISTED_REGEX (where it would also match the
+    #     letter L inside arbitrary race names like "Sprinters S L Prize").
+    #   - bare "G" (110 entry-rows 2015+): _GRADE_REGEX requires 2+ chars
+    #     (GI/GII/GIII/G1/G2/G3/JG*/...). A bare G matches neither _GRADE_REGEX
+    #     nor _STAKES_REGEX. Real-world these are graded/stakes races (e.g.
+    #     ターコイズステークス, 葵ステークス) where Kaggle stored the bare "G"
+    #     shorthand; the actual G1/G2/G3 level is encoded in the race_name.
+    #
+    # We mutate per_row_results IN PLACE so the downstream OR-merge (below)
+    # combines these bare-token True values with the regex-derived values.
+    # Verified data impact against 19860105-20210731_race_result.csv (2015+
+    # flat races): 2,232 "L" rows + 110 "G" rows previously got
+    # race_flag_listed=False / race_flag_stakes=False / race_flag_graded_stakes
+    # instead of True.
+    for i, row in enumerate(race_df.itertuples(index=False)):
+        grade_val = getattr(row, "grade", None) if has_grade else None
+        if pd.isna(grade_val):
+            continue
+        g = str(grade_val).strip()
+        if g == "L":
+            # Bare Listed marker: a Listed race is by definition a stakes.
+            per_row_results[i]["race_flag_listed"] = True
+            per_row_results[i]["race_flag_stakes"] = True
+        elif g == "G" or g == "Ｇ":
+            # Bare graded shorthand (half-width G U+0047 or full-width Ｇ U+FF27).
+            # The bare marker is evidence the race is graded/stakes; the actual
+            # G1/G2/G3 level, if any, is encoded in race_name and already
+            # detected by _GRADE_REGEX above. A graded stakes is a stakes.
+            per_row_results[i]["race_flag_graded_stakes"] = True
+            per_row_results[i]["race_flag_stakes"] = True
+
     for col in grade_targets:
         # Coerce existing to nullable boolean FIRST so .fillna(False) does not
         # trigger pandas' object->bool downcasting FutureWarning. The column
