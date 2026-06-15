@@ -526,6 +526,73 @@ class TestValidateReferentialIntegrity:
         errors = validate_referential_integrity(parquet_dir)
         assert len(errors) > 0, "Expected referential integrity errors"
 
+    def test_horse_race_id_1to1_mismatch_detected(self, tmp_path: Path) -> None:
+        """WR-08: entry/result horse_race_id 1-to-1 mismatch is detected.
+
+        Previously validate_referential_integrity only checked race_id
+        parent-child relationships. A post-hoc editor corrupting entry/result
+        outside the integration path (e.g. a drop_duplicates that breaks the
+        1-to-1) would leave this validator reporting errors == []. The fix adds
+        an explicit horse_race_id 1-to-1 check mirroring integration.py:327-338.
+        """
+        from src.pipeline.validators import validate_referential_integrity
+
+        parquet_dir = tmp_path / "standard"
+        parquet_dir.mkdir()
+
+        race_df = pd.DataFrame({"race_id": ["001"]})
+        # Entry has 3 horse_race_ids; result has only 2 (1-to-1 broken).
+        entry_df = pd.DataFrame({
+            "race_id": ["001", "001", "001"],
+            "horse_race_id": ["00101", "00102", "00103"],
+        })
+        result_df = pd.DataFrame({
+            "race_id": ["001", "001"],
+            "horse_race_id": ["00101", "00102"],  # missing 00103
+        })
+
+        race_df.to_parquet(parquet_dir / "race.parquet", engine="pyarrow", index=False)
+        entry_df.to_parquet(parquet_dir / "entry.parquet", engine="pyarrow", index=False)
+        result_df.to_parquet(parquet_dir / "result.parquet", engine="pyarrow", index=False)
+
+        errors = validate_referential_integrity(parquet_dir)
+        mismatch_errors = [e for e in errors if "1-to-1" in e]
+        assert mismatch_errors, (
+            f"Expected a horse_race_id 1-to-1 mismatch error (WR-08); got {errors}"
+        )
+
+    def test_horse_race_id_1to1_consistent_no_error(self, tmp_path: Path) -> None:
+        """WR-08: entry/result with matching horse_race_id sets produce no 1-to-1 error."""
+        from src.pipeline.validators import validate_referential_integrity
+
+        parquet_dir = tmp_path / "standard"
+        parquet_dir.mkdir()
+
+        race_df = pd.DataFrame({"race_id": ["001"]})
+        # Both entry and result have the SAME horse_race_id multiset.
+        shared_hids = ["00101", "00102", "00103"]
+        entry_df = pd.DataFrame({
+            "race_id": ["001"] * 3,
+            "horse_race_id": shared_hids,
+        })
+        result_df = pd.DataFrame({
+            "race_id": ["001"] * 3,
+            "horse_race_id": shared_hids,
+        })
+
+        race_df.to_parquet(parquet_dir / "race.parquet", engine="pyarrow", index=False)
+        entry_df.to_parquet(parquet_dir / "entry.parquet", engine="pyarrow", index=False)
+        result_df.to_parquet(parquet_dir / "result.parquet", engine="pyarrow", index=False)
+
+        errors = validate_referential_integrity(parquet_dir)
+        # No 1-to-1 error should be present. (errors may still contain
+        # 'Missing odds_trifecta.parquet' / 'Missing payoff.parquet' from the
+        # minimal fixture; we only assert the WR-08 check found no mismatch.)
+        onetoone_errors = [e for e in errors if "1-to-1" in e]
+        assert onetoone_errors == [], (
+            f"Expected no horse_race_id 1-to-1 error; got {onetoone_errors}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 7: validate_sample_rows

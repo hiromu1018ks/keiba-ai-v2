@@ -466,6 +466,58 @@ def validate_referential_integrity(parquet_dir: Path) -> list[str]:
                 f"Referential integrity: {table_name} has {orphan_count} orphan race_ids"
             )
 
+    # WR-08 (Phase 06 review): entry/result horse_race_id 1-to-1 check.
+    #
+    # validate_referential_integrity previously checked only race_id parent-
+    # child relationships. It did NOT verify the horse_race_id 1-to-1
+    # relationship between entry and result — the very invariant that
+    # integration.py:327-338 extends the hard-violation filter to enforce at
+    # WRITE time (HIGH #8b cycle-4). So a post-hoc editor corrupting entry or
+    # result outside the integration path (e.g. a manual drop_duplicates that
+    # breaks the 1-to-1) would leave this validator reporting errors == [] and
+    # overall_pass=True. The integration path catches it at write time, but the
+    # standalone validator did not.
+    #
+    # The check requires both tables to have a horse_race_id column; minimal
+    # test fixtures (e.g. test_missing_race_id_produces_error) may omit it, in
+    # which case we skip the 1-to-1 check rather than KeyError.
+    entry_path = parquet_dir / "entry.parquet"
+    result_path = parquet_dir / "result.parquet"
+    if entry_path.exists() and result_path.exists():
+        from collections import Counter
+
+        entry_df_hid = pd.read_parquet(entry_path, columns=None)
+        result_df_hid = pd.read_parquet(result_path, columns=None)
+        if (
+            "horse_race_id" in entry_df_hid.columns
+            and "horse_race_id" in result_df_hid.columns
+        ):
+            entry_hids = Counter(
+                entry_df_hid["horse_race_id"].dropna().tolist()
+            )
+            result_hids = Counter(
+                result_df_hid["horse_race_id"].dropna().tolist()
+            )
+            if entry_hids != result_hids:
+                only_entry = len(entry_hids - result_hids)
+                only_result = len(result_hids - entry_hids)
+                # Also catch count mismatches (same id appearing more times in
+                # one table than the other) — set-difference alone misses those.
+                count_mismatches = [
+                    hid for hid in entry_hids.keys() & result_hids.keys()
+                    if entry_hids[hid] != result_hids[hid]
+                ]
+                errors.append(
+                    f"entry/result horse_race_id not 1-to-1 "
+                    f"(only-in-entry={only_entry}, only-in-result={only_result}, "
+                    f"count-mismatched={len(count_mismatches)})"
+                )
+                logger.warning(
+                    f"Referential integrity: entry/result horse_race_id not "
+                    f"1-to-1 (only-entry={only_entry}, only-result={only_result}, "
+                    f"count-mismatched={len(count_mismatches)})"
+                )
+
     if not errors:
         logger.info("Referential integrity PASSED for all tables")
 
