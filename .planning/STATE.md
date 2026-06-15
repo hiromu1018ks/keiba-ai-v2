@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 07-02-PLAN.md (load_features data_loader)
-last_updated: "2026-06-15T14:09:45.477Z"
+last_updated: "2026-06-15T14:25:45.640Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 32
-  completed_plans: 26
+  completed_plans: 27
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 07 execution started
 
@@ -77,6 +77,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P03 | 2100 | 2 tasks | 3 files |
 | Phase 07 P01 | 967 | 3 tasks | 10 files |
 | Phase 07 P02 | 955 | 2 tasks | 2 files |
+| Phase 07 P03 | 688 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -149,6 +150,9 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 07 P02]: UNIFIED empty-list [] is the sole expected_counts bypass sentinel. Empty dict {} raises TypeError (Cycle-2 HIGH #2 + Cycle-5 MEDIUM truthy guard: isinstance(dict) and expected_counts).
 - [Phase ?]: [Phase 07 P02]: load_features performs read-boundary sort_values(['race_date','race_id','horse_number']) + reset_index + is_monotonic_increasing assert. On-disk features_train.parquet is NOT chronologically ordered (verified False pre-sort); GroupTimeSeriesSplit (07-03) requires ascending input. train/holdout DataFrames RETAIN race_date column so trainer passes dates=df['race_date'] to splitter.split (Cycle-2 HIGH #1).
 - [Phase ?]: [Phase 07 P02]: Rule 2 fix — gated inline skip (os.environ RUN_GATED != '1' -> pytest.skip) added to both gated tests, mirroring tests/scraper/test_end_to_end.py:713-720 live pattern. pyproject.toml gated marker only suppresses PytestUnknownMarkWarning and does NOT auto-skip; without inline skip gated tests would run in CI against the real corpus.
+- [Phase 07 P03]: [Phase 07 P03]: GroupTimeSeriesSplit is bespoke (NOT mlxtend) per CLAUDE.md 'Use Instead' — Phase 8/9 reusable asset, no external dep. n_splits+1 date-block chunk scheme (Codex HIGH #1 fix): chunk 0 = warm-up train always in every fold's training set, so fold 0 train is non-empty. Legacy n_splits-chunk had fold 0 train = chunks[:0] = empty (structural bug).
+- [Phase 07 P03]: [Phase 07 P03]: Cycle-3 HIGH fix — chunking is date-block-aware (race_count -> unique race_date blocks). All race_ids sharing a date are an atomic block inside one chunk; a race_date can never straddle a train/val boundary. max(train_dates) < min(val_dates) is now a GENUINE INVARIANT (holds by construction), so the strict per-fold assertion NEVER raises on JRA real data (mean 30.75 races/date, zero single-race dates). Legacy race-count chunking placed >=1 of 5 inner boundaries inside a date for any 6-chunk split, halting the production 5-fold run via AssertionError.
+- [Phase 07 P03]: [Phase 07 P03]: Cycle-2 HIGH #1 fix — split(X, y, groups, dates=None) takes dates as an explicit arg so the per-fold temporal-order assertion ALWAYS fires when dates are provided (X column-presence independent). Legacy gate ('X is DataFrame with race_date column') was dead code because trainer passes X=df[feature_columns] (race_date in drop_columns). trainer.collect_oof_predictions (07-04) will pass dates=df['race_date']. Cycle-5 MEDIUM: dates=None + X-lacks-race_date raises explicit ValueError (not silent skip). Cycle-5 LOW: defensive assert each race_id maps to exactly one race_date.
 
 ### Pending Todos
 
@@ -177,6 +181,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T14:09:45.472Z
+Last session: 2026-06-15T14:24:45.038Z
 Stopped at: Completed 07-02-PLAN.md (load_features data_loader)
 Resume file: .planning/phases/07-model-a-top-3-probability/07-03-PLAN.md
