@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Feature Engineering** - Generate ML-ready features (race, horse form, jockey/trainer stats, recent performance) from standard data with temporal safety (completed 2026-06-12)
 - [x] **Phase 4: Scraping Infrastructure & Race Data** - Build fetch/parse/normalize pipeline and scrape 2022-2024 JRA race results into standard Parquet
 - [ ] **Phase 5: Trifecta Odds Scraping** - Scrape all-combination trifecta odds (up to 816 per race) for 2022-2024 and save in standard format
-- [ ] **Phase 6: Data Integration** - Merge Kaggle (2015-2021) and scraped (2022-2024) datasets into a unified 2015-2024 standard Parquet corpus
+- [x] **Phase 6: Data Integration** - Merge Kaggle (2015-2021) and scraped (2022-2024) datasets into a unified 2015-2024 standard Parquet corpus (completed 2026-06-15)
 - [ ] **Phase 7: Model A -- Top-3 Probability** - Build LightGBM top-3 probability model with temporal CV, baseline comparison, and probability calibration
 - [ ] **Phase 8: EV Calculation Engine** - Compute Harville trifecta probabilities, calculate EV for all combinations, filter by threshold, enforce point caps, and mark skip races
 - [ ] **Phase 9: Walk-Forward Backtest** - Run walk-forward expanding-window backtest over 2015-2024, compute ROI/hit rate/drawdown, and produce detailed breakdowns
@@ -297,7 +297,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 3. Feature Engineering | 5/5 | Complete | 2026-06-12 |
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
-| 6. Data Integration | 2/3 | In Progress|  |
+| 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
 | 7. Model A -- Top-3 Probability | 0/? | Not started | - |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
