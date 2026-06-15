@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: Scraping Infrastructure & Race Data** - Build fetch/parse/normalize pipeline and scrape 2022-2024 JRA race results into standard Parquet
 - [ ] **Phase 5: Trifecta Odds Scraping** - Scrape all-combination trifecta odds (up to 816 per race) for 2022-2024 and save in standard format
 - [x] **Phase 6: Data Integration** - Merge Kaggle (2015-2021) and scraped (2022-2024) datasets into a unified 2015-2024 standard Parquet corpus (completed 2026-06-15)
-- [ ] **Phase 7: Model A -- Top-3 Probability** - Build LightGBM top-3 probability model with temporal CV, baseline comparison, and probability calibration
+- [ ] **Phase 7: Model A -- Top-3 Probability** - Build LightGBM top-3 probability model (2018-2024 train, 2025-2026/5 holdout per D-05) with race-grouped temporal CV (GroupTimeSeriesSplit), Isotonic calibration, and popularity-baseline comparison on holdout (reference-only per D-07/D-08)
 - [ ] **Phase 8: EV Calculation Engine** - Compute Harville trifecta probabilities, calculate EV for all combinations, filter by threshold, enforce point caps, and mark skip races
 - [ ] **Phase 9: Walk-Forward Backtest** - Run walk-forward expanding-window backtest over 2015-2024, compute ROI/hit rate/drawdown, and produce detailed breakdowns
 - [ ] **Phase 10: CLI & Reporting** - Build Click-based CLI for all operations and CSV output for backtest results and bet candidates
@@ -208,15 +208,15 @@ Plans:
 
 ### Phase 7: Model A -- Top-3 Probability
 
-**Goal**: A LightGBM model predicts each horse's probability of finishing in the top 3, validated with temporal cross-validation, beating a popularity baseline, and calibrated so predicted probabilities match observed frequencies
+**Goal**: A LightGBM model predicts each horse's probability of finishing in the top 3, trained on 2018-2024 data (D-05), validated with race-grouped temporal cross-validation (GroupTimeSeriesSplit), calibrated via Isotonic regression (holdout ECE < 0.02 per D-11), and compared against a popularity-rank baseline on holdout as reference information (D-07/D-08 — beating the baseline is not a required gate because the pure-properties model excludes odds per 03-CONTEXT D-15)
 **Depends on**: Phase 3, Phase 6
 **Requirements**: MODA-01, MODA-02, MODA-03, MODA-04
-**Success Criteria** (what must be TRUE):
+**Success Criteria** (what must be TRUE — updated Cycle-2 HIGH #4 fix to match LOCKED decisions D-05/D-07/D-08; stale "2015-2023" / "beat baseline on OOF" wording replaced):
 
-  1. LightGBM binary classifier outputs p_top3 for each horse in a race, trained on 2015-2023 data with temporal splits
-  2. TimeSeriesSplit is used for all cross-validation; no future data appears in any training fold
-  3. Model AUC or ROI metric exceeds the popularity-rank baseline (horses ranked by win odds) on out-of-fold predictions
-  4. OOF predictions are calibrated: predicted probability bins match actual top-3 hit rates within a defined tolerance
+  1. LightGBM binary classifier outputs p_top3 for each horse in a race, trained on **2018-2024 data** with temporal splits (D-05/D-01 — window pulled forward from "2015-2023" to mitigate concept drift; holdout = 2025-01〜2026-05 per D-02)
+  2. GroupTimeSeriesSplit (race_id-grouped, n_splits+1 expanding-window chunks) is used for all cross-validation; no future data appears in any training fold (temporal-order assertion enforced on the real execution path — Cycle-2 HIGH #1)
+  3. Model AUC on **holdout** is compared against the popularity-rank baseline (horses ranked by win odds) as **reference information**; beating the baseline is NOT a required success gate because the pure-horse-properties model (odds excluded per 03-CONTEXT D-15) is expected to rarely beat market wisdom on AUC alone (D-07/D-08 — true EV edge is validated in Phase 9 ROI). Baseline is reported in evaluation_report.md.
+  4. OOF predictions are calibrated via Isotonic regression (fit on OOF validation chunks only — warm-up excluded per Codex HIGH #2) and applied to holdout: holdout ECE < 0.02 (D-11), verified via reliability diagram. **oof_rows is recorded in metrics.json** (Cycle-2 HIGH #3 — producer/consumer contract between 07-07 run_train and 07-08 verify).
 
 **Plans**: 8 plans
 
