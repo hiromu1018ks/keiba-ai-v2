@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 6 plan 06-03 Tasks 1-2 complete (unified corpus written + 8-point validation green); Task 3 human-verify checkpoint returned to orchestrator (NOT self-approved)
-last_updated: "2026-06-15T00:29:34.000Z"
-last_activity: 2026-06-15 -- Phase 06 plan 06-03 integration + verification done; awaiting human approval on unified corpus
+stopped_at: Phase 6 plan 06-03 COMPLETE (Task 3 human-verify APPROVED 2026-06-15); Phase 06 data-integration fully delivered; next = phase-level verification then Phase 7 (Phase 3 feature-regen is a pre-Phase-7 carryover)
+last_updated: "2026-06-15T09:45:00.000Z"
+last_activity: 2026-06-15 -- Phase 06 plan 06-03 Task 3 human-verify approved; unified corpus LOCKED (race=38009/entry=result=534953); 06-03 marked COMPLETE in ROADMAP
 progress:
   total_phases: 10
   completed_phases: 4
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 ## Current Position
 
-Phase: 06 (data-integration) — EXECUTING
-Plan: 3 of 3 (Tasks 1-2 complete; Task 3 human-verify checkpoint pending user approval)
-Status: Phase 06 plan 06-03 unified corpus written + 8-point validation green; awaiting human approval
-Last activity: 2026-06-15 -- Phase 06 plan 06-03 integration + verification done
+Phase: 06 (data-integration) — COMPLETE (all 3 plans 06-01/06-02/06-03 delivered)
+Plan: 3 of 3 COMPLETE (Task 3 human-verify APPROVED 2026-06-15)
+Status: Phase 06 fully delivered; unified corpus LOCKED (race=38009/entry=result=534953); next = phase-level verification then Phase 7
+Last activity: 2026-06-15 -- Phase 06 plan 06-03 Task 3 human-verify approved; plan COMPLETE
 
 Progress: [████░░░░░░] 42%
 

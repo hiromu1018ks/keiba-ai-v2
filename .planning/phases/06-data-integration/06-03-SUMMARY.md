@@ -275,6 +275,20 @@ Per plan `autonomous: false` and `<task type="checkpoint:human-verify" gate="blo
 - 11 integration tests green — VERIFIED
 - Preflight month-set equality (58==58, 0 missing, 0 extra) — VERIFIED
 
+## Task 3 — human-verify approved
+
+**Approved on:** 2026-06-15
+**Gate:** `checkpoint:human-verify` (`gate="blocking"`) — end-of-phase blocking checkpoint per `autonomous: false`.
+
+The user reviewed the orchestrator's spot-checked verification summary (8-point run_all_validations overall_pass=True, 11 integration tests green, odds/payoff SHA-256 byte-identical, PK-set union equality, date-floor satisfied) and typed **approved**.
+
+Two noted items were accepted by the user:
+
+- **(a) Rule 1 fix in `validators.py`** (commit `08f1b35`) — accepted as a narrow corpus-growth fix: case-insensitive `'float'` substring so pandas nullable `Float64` dtype (Phase 4 cycle-3 #1 authority for nullable-int fields) passes schema conformance on the larger unified corpus. Not a scope expansion; the corpus itself is verified correct.
+- **(b) feature_generator 2-test failure DEFERRED** — `np.select empty condlist` TypeError on the unified corpus. Owning phase = Phase 3; explicitly deferred per `06-CONTEXT.md` Deferred Ideas. Re-run is a pre-Phase-7 carryover. Corpus correctness is independent of this (8-point validation green).
+
+The unified corpus is verified CORRECT via the 8-point run_all_validations + spot checks. Task 3 satisfies its resume-signal; no code change was required (`<files></files>` empty).
+
 ---
 *Phase: 06-data-integration*
 *Completed: 2026-06-15*
