@@ -33,7 +33,20 @@ _DTYPE_COMPAT: dict[str, set[str]] = {
     "int": {"int64", "Int64", "int32", "Int32", "int16", "Int16", "int8", "Int8",
             "uint8", "uint16", "uint32", "uint64"},
     "float": {"float64", "float32", "Float64", "Float32"},
-    "bool": {"bool", "boolean", "object"},  # object for nullable bool (True/None)
+    # CR-03 (Phase 06 review): removed "object" from the bool set.
+    #
+    # The "object" entry was originally added to tolerate nullable booleans
+    # stored as object after a Parquet round-trip. But the production dtype
+    # contract (normalizer.SCHEMA_DTYPE_MAP) uses nullable "boolean" (capital B)
+    # for all 20 race_flag_* fields, which serializes to Arrow bool, NOT object.
+    # Accepting "object" unconditionally meant a race_flag_* column stored as
+    # object with arbitrary string/int content (e.g. ["yes", 5, pd.NA]) passed
+    # schema conformance silently — the opposite of a validator.
+    #
+    # The object-content guard below (in validate_schema_conformance) catches
+    # the residual object-dtype case that DOES occur in practice (all-NA object
+    # columns from empty Parquet round-trips) while rejecting non-bool content.
+    "bool": {"bool", "boolean"},
 }
 
 
@@ -160,6 +173,24 @@ def validate_schema_conformance(parquet_dir: Path) -> dict[str, list[str]]:
             compatible_dtypes = _DTYPE_COMPAT.get(expected_cat, set())
 
             if actual_dtype not in compatible_dtypes:
+                # CR-03 (Phase 06 review): bool field stored as object. The
+                # production dtype contract (normalizer.SCHEMA_DTYPE_MAP) uses
+                # nullable "boolean" for all race_flag_* fields, which round-trips
+                # through Arrow as bool — NOT object. An object-dtype bool column
+                # therefore indicates either (a) an all-NA column from an empty
+                # Parquet round-trip (acceptable) or (b) genuine corruption
+                # (string/int content masquerading as bool — REJECT). The content
+                # guard below distinguishes the two.
+                if expected_cat == "bool" and actual_dtype == "object":
+                    sample = df[field_name].dropna()
+                    if sample.empty or sample.isin([True, False]).all():
+                        # All-NA or all-True/False: treat as compatible.
+                        continue
+                    errors.append(
+                        f"Dtype mismatch for {field_name}: object dtype contains "
+                        f"non-bool values: {sample.unique()[:5].tolist()}"
+                    )
+                    continue
                 # Check if nullable integer stored as float (common in Parquet).
                 # Case-insensitive substring match so pandas nullable ``Float64`` /
                 # ``Float32`` are accepted alongside numpy ``float64``/``float32``.

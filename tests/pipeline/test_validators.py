@@ -257,6 +257,69 @@ class TestValidateSchemaConformance:
         result = validate_schema_conformance(parquet_dir)
         assert len(result["race"]) > 0, "Expected errors for missing columns"
 
+    def test_corrupt_bool_object_column_rejected(self, tmp_path: Path) -> None:
+        """CR-03: a race_flag_* column stored as object with non-bool content is rejected.
+
+        Previously _DTYPE_COMPAT['bool'] accepted 'object' unconditionally, so a
+        race_flag_handicap column with content like ['yes', 'maybe', pd.NA]
+        passed schema conformance silently. The CR-03 fix removes 'object' from
+        the bool set and adds a content guard that accepts all-NA or
+        all-True/False object columns but rejects mixed string/int content.
+
+        Note: pyarrow itself refuses to write a truly mixed object column, so
+        we write string content (which pyarrow accepts as object/string) and
+        read it back — the validator's content guard must reject it.
+        """
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        from src.pipeline.validators import validate_schema_conformance
+
+        parquet_dir = tmp_path / "standard"
+        parquet_dir.mkdir()
+        # Build a Table where race_flag_handicap has object/string content
+        # ("yes"/"maybe") that is NOT bool. The schema declares this field as
+        # Optional[bool], so the validator must flag the non-bool content.
+        table = pa.table({
+            "race_id": pa.array(["001", "002"], type=pa.string()),
+            "race_flag_handicap": pa.array(
+                ["yes", "maybe"], type=pa.string()
+            ),
+        })
+        pq.write_table(table, parquet_dir / "race.parquet")
+
+        result = validate_schema_conformance(parquet_dir)
+        race_errors = result.get("race", [])
+        # The non-bool content must be flagged (not silently accepted).
+        corrupt_error = [
+            e for e in race_errors if "race_flag_handicap" in e and "non-bool" in e
+        ]
+        assert corrupt_error, (
+            f"Expected a non-bool content error for race_flag_handicap; "
+            f"got errors={race_errors}"
+        )
+
+    def test_all_na_object_bool_column_accepted(self, tmp_path: Path) -> None:
+        """CR-03: an all-NA object-dtype bool column is accepted (residual Parquet artifact)."""
+        from src.pipeline.validators import validate_schema_conformance
+
+        parquet_dir = tmp_path / "standard"
+        parquet_dir.mkdir()
+        # All-NA object column (residual from empty Parquet round-trip).
+        df = pd.DataFrame({
+            "race_id": ["001"],
+            "race_flag_handicap": pd.array([None], dtype=object),
+        })
+        df.to_parquet(parquet_dir / "race.parquet", engine="pyarrow", index=False)
+
+        result = validate_schema_conformance(parquet_dir)
+        # The all-NA object column should NOT trigger the non-bool content error.
+        nonbool_errors = [
+            e for e in result.get("race", []) if "non-bool" in e
+        ]
+        assert nonbool_errors == [], (
+            f"All-NA object bool column should be accepted; got {nonbool_errors}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 3: validate_audit
