@@ -234,7 +234,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion; 07-04 depends on 07-03 per Codex HIGH #3 fix)*
 
-- [ ] 07-04: trainer.py — LightGBM sensible defaults + early stopping callback API + OOF 収集(val chunks only) + 二段階全量再学習 + feature_columns 明示的引数 (MODA-01, Codex HIGH #2/#5/#6 fixes)
+- [x] 07-04: trainer.py — LightGBM sensible defaults + early stopping callback API + OOF 収集(val chunks only) + 二段階全量再学習 + feature_columns 明示的引数 (MODA-01, Codex HIGH #2/#5/#6 fixes)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -316,7 +316,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
-| 7. Model A -- Top-3 Probability | 5/8 | In Progress|  |
+| 7. Model A -- Top-3 Probability | 6/8 | In Progress|  |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
 | 10. CLI & Reporting | 0/? | Not started | - |

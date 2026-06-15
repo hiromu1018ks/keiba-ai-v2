@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-05-PLAN.md (calibrator Isotonic OOF→holdout)
-last_updated: "2026-06-15T15:06:19.115Z"
+stopped_at: "Completed 07-04-PLAN.md (trainer: train_fold_model + collect_oof_predictions + train_final_model)"
+last_updated: "2026-06-15T15:27:31.281Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 32
-  completed_plans: 29
+  completed_plans: 30
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 07 execution started
 
@@ -80,6 +80,7 @@ Progress: [████░░░░░░] 42%
 | Phase 07 P03 | 688 | 2 tasks | 2 files |
 | Phase 07 P05 | 792 | 2 tasks | 2 files |
 | Phase 07 P06 | 533 | 2 tasks | 4 files |
+| Phase 07 P04 | 895 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,10 @@ Recent decisions affecting current work:
 - [Phase 07]: [Phase 07 P06]: compute_ece returns 0.0+warning on empty input; compute_popularity_baseline returns auc=0.5+n_rows=0 on all-NaN fixture (defensive, not crash).
 - [Phase 07]: [Phase 07 P06]: evaluate() emits logger.warning when ece_calibrated>=0.02 (D-11 smell, T-07-06-02). Pitfall #5 leak prevention lives in calibrator.apply_calibrator (structural, no labels).
 - [Phase 07]: [Phase 07 P06]: reliability_diagram uses function-local matplotlib.use('Agg')+import so compute_ece/evaluate never pay matplotlib cost. Headless-safe (T-07-06-03).
+- [Phase ?]: [Phase 07 P04]: Pitfall #1 VERIFIED — train_fold_model uses callbacks=[lgb.early_stopping(...), lgb.log_evaluation(...)] ONLY; early_stopping_rounds= fit() kwarg AST-forbidden (LightGBM 4.x removed it).
+- [Phase ?]: [Phase 07 P04]: Codex HIGH #2 — len(oof_df) < len(df) is a CONTRACT (warm-up chunk 0 excluded from OOF); forcing warm-up predictions would leak into Isotonic calibration.
+- [Phase ?]: [Phase 07 P04]: Codex HIGH #5/#6 — feature_columns explicit arg + two-stage full retrain (Stage 1 best_iteration decision, Stage 2 fresh classifier on ALL rows at fixed iteration).
+- [Phase ?]: [Phase 07 P04]: Cycle-2 HIGH #1 — collect_oof_predictions forwards dates=df['race_date'] to splitter.split so per-fold temporal-order assertion always fires.
 
 ### Pending Todos
 
@@ -191,6 +196,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T15:05:36.700Z
-Stopped at: Completed 07-05-PLAN.md (calibrator Isotonic OOF→holdout)
-Resume file: .planning/phases/07-model-a-top-3-probability/07-06-PLAN.md
+Last session: 2026-06-15T15:27:31.275Z
+Stopped at: Completed 07-04-PLAN.md (trainer: train_fold_model + collect_oof_predictions + train_final_model)
+Resume file: .planning/phases/07-model-a-top-3-probability/07-07-PLAN.md
