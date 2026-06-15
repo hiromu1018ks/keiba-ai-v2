@@ -64,16 +64,34 @@ def compute_ece(
 
     完全に校正されたモデル: ECE = 0.0. D-11 成功基準: ECE < 0.02.
     戻り値は常に有限 float で [0.0, 1.0] に収まる（完全予測で 0.0・
-    最悪ケースで高々 1.0）。
+    最悪ケースで高々 1.0）。NaN 含む入力は NaN 行を除外して計算し、
+    全行 NaN の場合は 0.0 を返す（WR-04: 呼び出し元への nan 伝播防止）。
 
     Why not sklearn: ECE は scikit-learn 未収録（issue #18268 open）。
     RESEARCH.md "Don't Hand-Roll" で ECE は手動実装の例外として明記済み。
     """
     y_true_arr = np.asarray(y_true, dtype=float)
     y_prob_arr = np.asarray(y_prob, dtype=float)
+    # WR-04: drop NaN rows explicitly. Without this, y_true_arr.mean() over a
+    # bin containing NaN labels returns nan, propagating into ece_calibrated
+    # and thence into metrics.json as the non-standard 'NaN' literal (CR-01).
+    # It also breaks the run_train check 'if ece_calibrated >= ece_tolerance'
+    # — nan >= 0.02 is always False, so a D-11 violation would be silently
+    # swallowed. Masking NaN upholds the docstring contract that the return
+    # is always a finite float in [0.0, 1.0].
+    if y_true_arr.shape[0] != y_prob_arr.shape[0]:
+        raise ValueError(
+            f"compute_ece: y_true and y_prob length mismatch "
+            f"({y_true_arr.shape[0]} vs {y_prob_arr.shape[0]})"
+        )
+    mask = ~(np.isnan(y_true_arr) | np.isnan(y_prob_arr))
+    y_true_arr = y_true_arr[mask]
+    y_prob_arr = y_prob_arr[mask]
     n = len(y_true_arr)
     if n == 0:
-        logger.warning("compute_ece: empty input (n=0), returning 0.0")
+        logger.warning(
+            "compute_ece: empty or all-NaN input after NaN drop, returning 0.0"
+        )
         return 0.0
 
     bins = np.linspace(0.0, 1.0, n_bins + 1)
