@@ -20,7 +20,7 @@ Transactionality model (HIGH #6 cycle-3 + cycle-5):
     2. Validate integrity via ``validate_integrity`` (HIGH #8) and the
        extended hard-violation filter (HIGH #8b cycle-4).
     3. Stage all 3 to a per-run ``tempfile.mkdtemp`` directory via
-       ``_atomic_write_parquet``.
+       ``atomic_write_parquet``.
     4. Validate each staged file (row count > 0, schema column-set, PK unique).
     5. Swap each staged file into root via ``_commit_staging`` (DEDICATED
        module-level function -- cycle-5). The swap is wrapped in try/finally
@@ -69,7 +69,7 @@ from src.schemas.entry import EntrySchema
 from src.schemas.race import RaceSchema
 from src.schemas.result import ResultSchema
 from src.scraper.normalizer import (
-    _atomic_write_parquet,
+    atomic_write_parquet,
     recast_to_canonical,
     validate_integrity,
 )
@@ -151,7 +151,7 @@ def _commit_staging(staging_dir: Path, standard_dir: Path) -> None:
     boundary so the transactionality regression test
     (``test_integration_partial_swap_recoverable``) can inject a mid-swap
     failure by monkeypatching THIS symbol -- NOT global ``os.replace``, which
-    is also called by ``_atomic_write_parquet`` during the staging WRITES and
+    is also called by ``atomic_write_parquet`` during the staging WRITES and
     would fire the monkeypatch at the wrong stage (cycle-4 NEW HIGH #2 fix).
 
     The 3 swaps are sequential, not atomic as a group. A failure between the
@@ -391,13 +391,13 @@ def integrate_standard_layer(
         tempfile.mkdtemp(prefix=".integration_staging_", dir=str(standard_dir))
     )
     try:
-        # Stage all 3 merged frames via _atomic_write_parquet. NOTE:
-        # _atomic_write_parquet's internal os.replace commits each STAGING file
+        # Stage all 3 merged frames via atomic_write_parquet. NOTE:
+        # atomic_write_parquet's internal os.replace commits each STAGING file
         # BEFORE the swap loop; these staging commits are NOT routed through
         # _commit_staging and are NOT patched by the cycle-5 transactionality
         # test (which patches _commit_staging directly).
         for table, merged in merged_by_table.items():
-            _atomic_write_parquet(merged, staging_dir / f"{table}.parquet")
+            atomic_write_parquet(merged, staging_dir / f"{table}.parquet")
 
         # Validate each staged file: row count > 0, schema column-set, PK unique.
         for table, schema in SCHEMA_BY_TABLE.items():

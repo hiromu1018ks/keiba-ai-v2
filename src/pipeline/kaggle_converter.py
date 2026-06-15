@@ -28,7 +28,7 @@ from src.pipeline.column_mapping import (
 )
 from src.scraper.flag_crosswalk import derive_race_flags
 from src.scraper.normalizer import (
-    _atomic_write_parquet,
+    atomic_write_parquet,
     recast_to_canonical,
 )
 from src.schemas.audit import audit_leakage
@@ -297,7 +297,7 @@ def convert(
 
     for table_name, table_df in core_tables.items():
         output_path = core_out_dir / f"{table_name}.parquet"
-        _atomic_write_parquet(table_df, output_path)
+        atomic_write_parquet(table_df, output_path)
         output_paths[table_name] = output_path
         logger.info(f"Wrote {table_name}: {len(table_df)} rows -> {output_path}")
 
@@ -309,7 +309,7 @@ def convert(
         }
         for table_name, table_df in odds_tables.items():
             output_path = standard_dir / f"{table_name}.parquet"
-            _atomic_write_parquet(table_df, output_path)
+            atomic_write_parquet(table_df, output_path)
             output_paths[table_name] = output_path
             logger.info(f"Wrote {table_name}: {len(table_df)} rows -> {output_path}")
     else:

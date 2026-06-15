@@ -687,17 +687,29 @@ def recast_to_canonical(
     return out
 
 
-def _atomic_write_parquet(df: pd.DataFrame, path: Path) -> None:
+def atomic_write_parquet(df: pd.DataFrame, path: Path) -> None:
     """Write ``df`` to ``path`` atomically via a temp file + ``os.replace``.
 
     Parent directories are created on demand. Uses ``engine="pyarrow"``,
     ``compression="snappy"``, ``index=False`` (same as kaggle_converter.py).
+
+    WR-07 (Phase 06 review): this function was previously named
+    ``_atomic_write_parquet`` (module-private, leading underscore) but was a
+    load-bearing cross-module dependency of ``src.pipeline.integration`` and
+    ``src.pipeline.kaggle_converter``. The public name makes that contract
+    machine-visible via ``__all__``; ``_atomic_write_parquet`` is kept as a
+    deprecated back-compat alias so existing internal call sites and any
+    external references keep working.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     df.to_parquet(tmp_path, engine="pyarrow", compression="snappy", index=False)
     os.replace(tmp_path, path)
+
+
+# WR-07 back-compat alias (deprecated; use the public ``atomic_write_parquet``).
+_atomic_write_parquet = atomic_write_parquet
 
 
 # ---------------------------------------------------------------------------
@@ -842,5 +854,6 @@ __all__ = [
     "write_partitioned_parquet",
     "_build_typed_dataframe",
     "recast_to_canonical",
+    "atomic_write_parquet",
     "SCHEMA_DTYPE_MAP",
 ]
