@@ -2066,14 +2066,17 @@ class TestRealDataIntegration:
 
     @pytest.mark.integration
     def test_real_data_row_counts(self) -> None:
-        """Test 4: features_train.parquet has ~311,806 rows."""
+        """Test 4: features_train.parquet has ~534,953 rows (unified corpus)."""
         train_path = Path("data/feature/features_train.parquet")
         if not train_path.exists():
             pytest.skip("Real data features not generated yet")
 
         df = pd.read_parquet(train_path)
-        assert 310000 <= len(df) <= 320000, (
-            f"Expected ~311,806 rows, got {len(df)}"
+        # Unified corpus (Phase 6 DATA-05): race=38,009 / entry=result=534,953
+        # (Kaggle 21929/311806/311806 + scraped 16080/223147/223147).
+        # Band is corpus-scale-aware; widens only if the corpus grows again.
+        assert 530000 <= len(df) <= 540000, (
+            f"Expected ~534,953 rows (unified corpus), got {len(df)}"
         )
 
     @pytest.mark.integration
@@ -2117,6 +2120,7 @@ class TestRealDataIntegration:
         # Exclude scratched/removed from rate calculation
         valid = df[~df["exclude_from_training"]]
         rate = valid["target_top3"].mean()
+        # Actual on unified corpus (534,953 rows) = 0.2141; band unchanged.
         assert 0.16 <= rate <= 0.26, (
             f"target_top3 rate {rate:.4f} outside expected range [0.16, 0.26]"
         )
