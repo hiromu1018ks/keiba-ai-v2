@@ -68,8 +68,8 @@ from src.schemas.entry import EntrySchema
 from src.schemas.race import RaceSchema
 from src.schemas.result import ResultSchema
 from src.scraper.normalizer import (
-    SCHEMA_DTYPE_MAP,
     _atomic_write_parquet,
+    recast_to_canonical,
     validate_integrity,
 )
 
@@ -96,32 +96,19 @@ PK_BY_TABLE: dict[str, str] = {
 
 # ---------------------------------------------------------------------------
 # Helpers (reused from Phase 4 normalizer, NOT reimplemented)
+#
+
+# WR-04 (Phase 06 review): the local ``_recast_to_canonical`` definition was
+# REMOVED in favor of the shared ``recast_to_canonical`` imported from
+# ``src.scraper.normalizer``. The shared implementation uses COPY semantics
+# (returns a new frame), which is the load-bearing behavior here: the callers
+# at lines 285-286 invoke it on kaggle_df / scraped_df and rely on the
+# originals being preserved for the audit call later. The back-compat alias
+# keeps the underscore-prefixed name so existing references (and the
+# ``__all__`` export) keep working.
 # ---------------------------------------------------------------------------
 
-
-def _recast_to_canonical(
-    df: pd.DataFrame, schema: type[BaseModel]
-) -> pd.DataFrame:
-    """Apply ``SCHEMA_DTYPE_MAP[schema]`` to ``df`` with strict coercion.
-
-    Mirrors ``src/scraper/normalizer._build_typed_dataframe`` lines 242-255 and
-    ``_recast_for_storage`` lines 615-640. NEVER uses ``errors='ignore'`` -- a
-    genuine coercion failure raises ``TypeError`` so the contract is enforced
-    rather than aspirational.
-    """
-    dtype_map = SCHEMA_DTYPE_MAP[schema]
-    out = df.copy()
-    for col, target in dtype_map.items():
-        if col not in out.columns:
-            continue
-        try:
-            out[col] = out[col].astype(target)
-        except (TypeError, ValueError) as e:
-            raise TypeError(
-                f"Column {col!r} could not be coerced to {target!r} for "
-                f"{schema.__name__}: {e}"
-            ) from e
-    return out
+_recast_to_canonical = recast_to_canonical
 
 
 def _assert_column_set_equality(

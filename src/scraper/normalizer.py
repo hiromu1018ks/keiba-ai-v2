@@ -640,6 +640,53 @@ def _recast_for_storage(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     return out
 
 
+def recast_to_canonical(
+    df: "pd.DataFrame", schema: type[BaseModel]
+) -> "pd.DataFrame":
+    """Recast ``df`` to ``SCHEMA_DTYPE_MAP[schema]`` with strict coercion.
+
+    WR-04 (Phase 06 review): single shared implementation replacing the
+    duplicate ``_recast_to_canonical`` definitions that previously existed in
+    both ``src/pipeline/kaggle_converter.py`` and ``src/pipeline/integration.py``
+    with DIVERGENT mutation semantics (the kaggle_converter version mutated
+    in place; the integration version returned a copy). This shared function
+    uses the COPY semantics (returns a new frame, never mutates the caller's
+    frame) — the load-bearing behavior the integration caller relies on
+    (integration.py:285-286 calls this on kaggle_df / scraped_df and the
+    caller preserves the originals for the audit call). The kaggle_converter
+    callers reassign the result (``race_df = recast_to_canonical(race_df, ...)``)
+    so they are unaffected by the copy-vs-inplace distinction.
+
+    Mirrors ``_build_typed_dataframe`` (lines 200+) and ``_recast_for_storage``
+    (lines 601+). NEVER uses ``errors='ignore'`` — a genuine coercion failure
+    raises ``TypeError`` so the contract is enforced rather than aspirational.
+
+    Args:
+        df: DataFrame whose columns should be recast.
+        schema: Pydantic schema class; ``SCHEMA_DTYPE_MAP[schema]`` provides
+            the canonical ``{column: dtype}`` map.
+
+    Returns:
+        A NEW DataFrame (copy) with columns recast to canonical dtypes.
+
+    Raises:
+        TypeError: if a column cannot be coerced to its target dtype.
+    """
+    dtype_map = SCHEMA_DTYPE_MAP[schema]
+    out = df.copy()
+    for col, target in dtype_map.items():
+        if col not in out.columns:
+            continue
+        try:
+            out[col] = out[col].astype(target)
+        except (TypeError, ValueError) as e:
+            raise TypeError(
+                f"recast_to_canonical: column {col!r} could not be coerced "
+                f"to {target!r} for {schema.__name__}: {e}"
+            ) from e
+    return out
+
+
 def _atomic_write_parquet(df: pd.DataFrame, path: Path) -> None:
     """Write ``df`` to ``path`` atomically via a temp file + ``os.replace``.
 
@@ -794,5 +841,6 @@ __all__ = [
     "validate_integrity",
     "write_partitioned_parquet",
     "_build_typed_dataframe",
+    "recast_to_canonical",
     "SCHEMA_DTYPE_MAP",
 ]

@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pandas as pd
 from loguru import logger
-from pydantic import BaseModel
 
 from src.pipeline.column_mapping import (
     DTYPE_SPEC,
@@ -28,7 +27,10 @@ from src.pipeline.column_mapping import (
     get_columns_for_table,
 )
 from src.scraper.flag_crosswalk import derive_race_flags
-from src.scraper.normalizer import SCHEMA_DTYPE_MAP, _atomic_write_parquet
+from src.scraper.normalizer import (
+    _atomic_write_parquet,
+    recast_to_canonical,
+)
 from src.schemas.audit import audit_leakage
 from src.schemas.entry import EntrySchema
 from src.schemas.race import RaceSchema
@@ -179,32 +181,18 @@ def _apply_grade_detection(race_df: pd.DataFrame) -> pd.DataFrame:
     return race_df
 
 
-def _recast_to_canonical(df: pd.DataFrame, schema: type[BaseModel]) -> pd.DataFrame:
-    """Recast a DataFrame's columns to the canonical dtypes in SCHEMA_DTYPE_MAP.
-
-    Phase 6 D-02: the Kaggle-side Parquet must match the scraped-side dtype
-    contract (src.scraper.normalizer.SCHEMA_DTYPE_MAP) so the two corpora are
-    schema-indistinguishable before the Wave 2 merge. Mirrors
-    ``_build_typed_dataframe`` (normalizer.py) but operates on an existing
-    DataFrame rather than building from row dicts.
-
-    Iterates ``SCHEMA_DTYPE_MAP[schema].items()``; skips columns not present in
-    ``df``; casts each present column to its target dtype inside a try/except
-    that RE-RAISES as ``TypeError`` with a column-name message. NEVER uses the
-    silent ``ignore`` error mode (Cycle-2 #3 strict-path discipline).
-    """
-    dtype_map = SCHEMA_DTYPE_MAP[schema]
-    for col, target in dtype_map.items():
-        if col not in df.columns:
-            continue
-        try:
-            df[col] = df[col].astype(target)
-        except (TypeError, ValueError) as e:
-            raise TypeError(
-                f"_recast_to_canonical: column {col!r} could not be coerced "
-                f"to {target!r} for {schema.__name__}: {e}"
-            ) from e
-    return df
+# WR-04 (Phase 06 review): the local ``_recast_to_canonical`` definition was
+# REMOVED in favor of the shared ``recast_to_canonical`` in
+# ``src.scraper.normalizer``. The shared implementation uses COPY semantics
+# (returns a new frame, never mutates the caller's frame); the previous local
+# definition mutated in place, but all call sites below reassign the result
+# (``race_df = _recast_to_canonical(race_df, ...)``), so the semantic change
+# is behavior-preserving for every caller.
+#
+# The back-compat alias keeps the underscore-prefixed name so existing imports
+# (notably ``tests/pipeline/test_kaggle_converter.py::test_recast_raises_on_bad_data``
+# which imports ``_recast_to_canonical`` from this module) keep working.
+_recast_to_canonical = recast_to_canonical
 
 
 def convert(
