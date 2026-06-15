@@ -65,7 +65,27 @@ def compute_popularity_baseline(
     Returns:
         ``{"baseline_auc": float, "n_rows": int, "note": str}``. ``n_rows``
         is the post-``dropna`` row count actually scored.
+
+    Raises:
+        ValueError: if ``features_df`` already contains a ``popularity``
+            column (D-15 leakage invariant — caller must keep popularity
+            out of the feature layer). Without this guard the merge would
+            silently rename to ``popularity_x`` / ``popularity_y`` and the
+            subsequent ``dropna(subset=["popularity"])`` would raise a
+            confusing ``KeyError: ['popularity']``.
     """
+    # WR-03: enforce the D-15 leakage invariant at runtime. The docstring
+    # documents "features_df must NOT contain popularity" but the merge
+    # below would otherwise produce popularity_x/popularity_y columns and
+    # the dropna(subset=["popularity"]) would crash with KeyError on a
+    # caller that violates the invariant. Fail loudly with the real cause.
+    if "popularity" in features_df.columns:
+        raise ValueError(
+            "compute_popularity_baseline: features_df must NOT contain a "
+            "'popularity' column (D-15 leakage invariant — popularity is a "
+            "post-race market signal excluded from the pure-horse-characters "
+            "feature layer). Caller passed a frame with the column present."
+        )
     merged = features_df.merge(
         entry_df[["race_id", "horse_number", "popularity"]],
         on=["race_id", "horse_number"],
