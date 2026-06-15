@@ -55,6 +55,7 @@ Load-bearing anti-patterns (Pitfalls from 06-RESEARCH.md / 06-PATTERNS.md):
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -92,6 +93,15 @@ PK_BY_TABLE: dict[str, str] = {
     "entry": "horse_race_id",
     "result": "horse_race_id",
 }
+
+#: WR-06 (Phase 06 review): scraped month directories are partitioned by
+#: YYYYMM (e.g. ``202201``, ``202505``). A stray non-month directory (e.g.
+#: ``__pycache__``, ``archive/``, ``.DS_Store``-adjacent artifact) would
+#: otherwise be silently treated as a "month partition" and — if it happened
+#: to contain well-named ``{table}.parquet`` files — pollute the unified
+#: corpus. Validate each directory name matches the _MONTH_RE pattern below
+#: (``r"^\d{6}$"``) and skip/log non-matching directories explicitly.
+_MONTH_RE = re.compile(r"^\d{6}$")
 
 
 # ---------------------------------------------------------------------------
@@ -225,11 +235,26 @@ def integrate_standard_layer(
             f"integrate_standard_layer: scraped root {scraped_root!s} does not "
             f"exist; integration requires at least one scraped month partition"
         )
-    month_dirs = sorted(p for p in scraped_root.iterdir() if p.is_dir())
+    month_dirs = sorted(
+        p for p in scraped_root.iterdir()
+        if p.is_dir() and _MONTH_RE.match(p.name)
+    )
+    # WR-06 (Phase 06 review): skip/log non-YYYYMM directories explicitly so a
+    # stray __pycache__ / archive/ / .DS_Store-adjacent artifact is not silently
+    # treated as a month partition.
+    skipped = [
+        p for p in scraped_root.iterdir()
+        if p.is_dir() and not _MONTH_RE.match(p.name)
+    ]
+    if skipped:
+        logger.warning(
+            f"integrate_standard_layer: skipping non-YYYYMM dirs in scraped "
+            f"root: {[p.name for p in skipped]}"
+        )
     if not month_dirs:
         raise ValueError(
             f"integrate_standard_layer: scraped root {scraped_root!s} contains "
-            f"zero month directories; integration requires scraped data"
+            f"zero YYYYMM month directories; integration requires scraped data"
         )
 
     # ----- Build merged frames per table -----

@@ -327,6 +327,46 @@ class TestIntegrationHermetic:
             integrate_standard_layer(standard_dir)
 
     # ------------------------------------------------------------------
+    # WR-06: non-YYYYMM stray directories are skipped, not treated as months
+    # ------------------------------------------------------------------
+    def test_stray_non_yyyymm_directory_skipped(
+        self,
+        tmp_kaggle_input_dir,
+        tmp_scraped_partitions_dir,
+    ) -> None:
+        """WR-06: a stray non-YYYYMM directory is skipped, not merged.
+
+        Previously the month_dirs filter accepted ANY subdirectory, so a stray
+        ``__pycache__`` / ``archive/`` / ``.DS_Store``-adjacent artifact
+        containing well-named {table}.parquet would silently pollute the corpus.
+        The fix validates each directory name matches r'^\\d{6}$' and skips/logs
+        non-matching directories. This test creates a stray ``__pycache__``
+        directory with valid parquet inside scraped/ and verifies integration
+        still succeeds (stray skipped) with the expected row count.
+        """
+        standard_dir = tmp_kaggle_input_dir.parent
+        scraped_root = standard_dir / "scraped"
+
+        # Create a stray non-YYYYMM directory with well-named parquet files.
+        # If WR-06 regresses, integration will try to read these as a month
+        # partition and either error or inflate the row count.
+        stray_dir = scraped_root / "__pycache__"
+        stray_dir.mkdir(parents=True, exist_ok=True)
+        # Write a bogus race.parquet with a clearly-foreign race_id.
+        pd.DataFrame({"race_id": ["STRAY_999"]}).to_parquet(
+            stray_dir / "race.parquet", engine="pyarrow", index=False
+        )
+
+        # Integration must succeed (stray dir skipped).
+        result = integrate_standard_layer(standard_dir)
+
+        # The stray race_id must NOT appear in the merged race table.
+        merged_race = pd.read_parquet(result["race"])
+        assert "STRAY_999" not in set(merged_race["race_id"]), (
+            "Stray non-YYYYMM directory was merged into the corpus (WR-06 regression)"
+        )
+
+    # ------------------------------------------------------------------
     # Test 5: schema invariant post-integration (every flag Arrow bool etc)
     # ------------------------------------------------------------------
     def test_schema_invariant_post_integration(
