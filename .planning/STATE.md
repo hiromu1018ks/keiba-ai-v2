@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-01-PLAN.md (Wave 0 env + tests/ml scaffold)
-last_updated: "2026-06-15T13:49:21.876Z"
+stopped_at: Completed 07-02-PLAN.md (load_features data_loader)
+last_updated: "2026-06-15T14:09:45.477Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 32
-  completed_plans: 25
+  completed_plans: 26
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 07 execution started
 
@@ -76,6 +76,7 @@ Progress: [████░░░░░░] 42%
 | Phase 06 P02 | 777 | 2 tasks | 3 files |
 | Phase 06 P03 | 2100 | 2 tasks | 3 files |
 | Phase 07 P01 | 967 | 3 tasks | 10 files |
+| Phase 07 P02 | 955 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,11 @@ Recent decisions affecting current work:
 - [Phase 06 P03]: DEFERRED to Phase 3 re-run -- feature_generator TypeError (np.select empty condlist) on the larger unified corpus; 2 tests fail in tests/pipeline/test_feature_generator.py. Owning phase = Phase 3 (explicitly deferred per 06-CONTEXT.md). Corpus itself is correct (8-point validation green). See .planning/phases/06-data-integration/deferred-items.md.
 - [Phase ?]: [Phase 07 P01]: src.ml/__init__.py ships as import-safe empty marker (Phase 4 P01 analog); public re-exports deferred to Plan 07-07. Wave 0 scaffold only — no production src/ml/* symbols created.
 - [Phase ?]: [Phase 07 P01]: tests/ml/conftest.py hermetic fixtures — sample_feature_df keeps jockey/trainer as pandas CategoricalDtype (D-16 native categoricals, no one-hot), grade stays object/string with NaN preserved (Pitfall #4); popularity/win_odds live in sample_entry_df (separate) so leakage audit on feature df is empty by construction. 24 skip-state test cases named per RESEARCH Test Map + PATTERNS planner directives.
+- [Phase ?]: test
+- [Phase ?]: [Phase 07 P02]: horse_race_id format is NO underscore f'{race_id}{horse_number:02d}' — verified against data/standard/entry.parquet (534,953/534,953 = 100% match). EntrySchema docstring '{race_id}_{horse_number:02d}' is WRONG; real data wins (Pitfall #2 VERIFIED).
+- [Phase ?]: [Phase 07 P02]: UNIFIED empty-list [] is the sole expected_counts bypass sentinel. Empty dict {} raises TypeError (Cycle-2 HIGH #2 + Cycle-5 MEDIUM truthy guard: isinstance(dict) and expected_counts).
+- [Phase ?]: [Phase 07 P02]: load_features performs read-boundary sort_values(['race_date','race_id','horse_number']) + reset_index + is_monotonic_increasing assert. On-disk features_train.parquet is NOT chronologically ordered (verified False pre-sort); GroupTimeSeriesSplit (07-03) requires ascending input. train/holdout DataFrames RETAIN race_date column so trainer passes dates=df['race_date'] to splitter.split (Cycle-2 HIGH #1).
+- [Phase ?]: [Phase 07 P02]: Rule 2 fix — gated inline skip (os.environ RUN_GATED != '1' -> pytest.skip) added to both gated tests, mirroring tests/scraper/test_end_to_end.py:713-720 live pattern. pyproject.toml gated marker only suppresses PytestUnknownMarkWarning and does NOT auto-skip; without inline skip gated tests would run in CI against the real corpus.
 
 ### Pending Todos
 
@@ -171,6 +177,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T13:49:21.871Z
-Stopped at: Completed 07-01-PLAN.md (Wave 0 env + tests/ml scaffold)
-Resume file: .planning/phases/07-model-a-top-3-probability/07-02-PLAN.md
+Last session: 2026-06-15T14:09:45.472Z
+Stopped at: Completed 07-02-PLAN.md (load_features data_loader)
+Resume file: .planning/phases/07-model-a-top-3-probability/07-03-PLAN.md
