@@ -230,7 +230,7 @@ Plans:
 - [x] 07-02: data_loader.py — features_train 読込 + dtype 整備 + horse_race_id derive + window 分割 + audit_leakage + expected_counts bypass (MODA-01, Codex HIGH #4 fix)
 - [x] 07-03: group_timeseries_split.py — sklearn BaseCrossValidator 準拠の race_id グループ化時系列CV・n_splits+1 chunk scheme (MODA-02, Codex HIGH #1 fix)
 - [x] 07-05: calibrator.py — Isotonic OOF(val chunks only)→holdout リーク防止パターン (MODA-04, Codex HIGH #2 fix)
-- [ ] 07-06: evaluator.py + baseline.py — ECE/metrics/reliability diagram + 人気ベースライン AUC (MODA-04, MODA-03)
+- [x] 07-06: evaluator.py + baseline.py — ECE/metrics/reliability diagram + 人気ベースライン AUC (MODA-04, MODA-03)
 
 **Wave 2** *(blocked on Wave 1 completion; 07-04 depends on 07-03 per Codex HIGH #3 fix)*
 
@@ -316,7 +316,7 @@ Note: Phase 4 (Scraping) depends only on Phase 1, so it can execute in parallel 
 | 4. Scraping Infrastructure & Race Data | 8/8 | Complete    | 2026-06-14 |
 | 5. Trifecta Odds Scraping | 0/? | Not started | - |
 | 6. Data Integration | 3/3 | Complete    | 2026-06-15 |
-| 7. Model A -- Top-3 Probability | 4/8 | In Progress|  |
+| 7. Model A -- Top-3 Probability | 5/8 | In Progress|  |
 | 8. EV Calculation Engine | 0/? | Not started | - |
 | 9. Walk-Forward Backtest | 0/? | Not started | - |
 | 10. CLI & Reporting | 0/? | Not started | - |

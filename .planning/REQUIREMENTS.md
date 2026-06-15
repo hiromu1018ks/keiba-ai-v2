@@ -25,8 +25,8 @@
 
 - [x] **MODA-01**: LightGBMによる3着内確率モデルを構築し、各馬のp_top3を出力できること
 - [x] **MODA-02**: TimeSeriesSplitによる時系列CVで学習/検証を分離し、未来データのリークを防ぐこと
-- [ ] **MODA-03**: 人気順ベースライン（単勝オッズ順位）との比較でモデル確率の優位性を確認できること
-- [ ] **MODA-04**: OOF（Out-of-Fold）予測による確率キャリブレーションを実装し、推定確率と実際の的中率の一致を確認できること
+- [x] **MODA-03**: 人気順ベースライン（単勝オッズ順位）との比較でモデル確率の優位性を確認できること
+- [x] **MODA-04**: OOF（Out-of-Fold）予測による確率キャリブレーションを実装し、推定確率と実際の的中率の一致を確認できること
 
 ### EV Calculation — 三連複EV判定
 
@@ -100,8 +100,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCRP-05 | Phase 4 | Complete |
 | MODA-01 | Phase 7 | Complete |
 | MODA-02 | Phase 7 | Complete |
-| MODA-03 | Phase 7 | Pending |
-| MODA-04 | Phase 7 | Pending |
+| MODA-03 | Phase 7 | Complete |
+| MODA-04 | Phase 7 | Complete |
 | EVCALC-01 | Phase 8 | Pending |
 | EVCALC-02 | Phase 8 | Pending |
 | EVCALC-03 | Phase 8 | Pending |

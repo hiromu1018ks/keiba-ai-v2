@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 07-05-PLAN.md (calibrator Isotonic OOF→holdout)
-last_updated: "2026-06-15T14:43:59.195Z"
+last_updated: "2026-06-15T15:06:19.115Z"
 last_activity: 2026-06-15 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 32
-  completed_plans: 28
+  completed_plans: 29
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 ## Current Position
 
 Phase: 07 (model-a-top-3-probability) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-06-15 -- Phase 07 execution started
 
@@ -79,6 +79,7 @@ Progress: [████░░░░░░] 42%
 | Phase 07 P02 | 955 | 2 tasks | 2 files |
 | Phase 07 P03 | 688 | 2 tasks | 2 files |
 | Phase 07 P05 | 792 | 2 tasks | 2 files |
+| Phase 07 P06 | 533 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -158,6 +159,10 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 07 P05]: load_calibrator raises FileNotFoundError (not silent None) on missing path — at Phase 8 Harville EV time, a missing calibrator must fail loud rather than return an unfitted estimator (Rule 2 missing-critical-functionality fix).
 - [Phase ?]: [Phase 07 P05]: Codex HIGH #2 (OOF = validation chunks only, warm-up excluded) is a fit_calibrator docstring CONTRACT, not a runtime assertion — len(oof_raw) < training-window check is the caller's (07-04 collect_oof_predictions) responsibility because calibrator.py cannot know the training-window row count.
 - [Phase ?]: [Phase 07 P05]: Wave 0 skeleton shipped 3 TestCalibrator tests; plan requires 4. test_save_load_roundtrip ADDED in Task 2 (not just unskipped) — covers D-15 .joblib round-trip + FileNotFoundError. _manual_ece helper kept local; canonical ECE belongs to 07-06 evaluator (no duplication).
+- [Phase 07]: [Phase 07 P06]: D-09 race-level Top-3 recall deferred to 07-07 run_train (Cycle-5 MEDIUM option b). evaluate() is array-only (no race grouping); D-09 needs race_id which 07-07 retains.
+- [Phase 07]: [Phase 07 P06]: compute_ece returns 0.0+warning on empty input; compute_popularity_baseline returns auc=0.5+n_rows=0 on all-NaN fixture (defensive, not crash).
+- [Phase 07]: [Phase 07 P06]: evaluate() emits logger.warning when ece_calibrated>=0.02 (D-11 smell, T-07-06-02). Pitfall #5 leak prevention lives in calibrator.apply_calibrator (structural, no labels).
+- [Phase 07]: [Phase 07 P06]: reliability_diagram uses function-local matplotlib.use('Agg')+import so compute_ece/evaluate never pay matplotlib cost. Headless-safe (T-07-06-03).
 
 ### Pending Todos
 
@@ -186,6 +191,6 @@ yet.
 
 ## Session Continuity
 
-Last session: 2026-06-15T14:43:59.190Z
+Last session: 2026-06-15T15:05:36.700Z
 Stopped at: Completed 07-05-PLAN.md (calibrator Isotonic OOF→holdout)
 Resume file: .planning/phases/07-model-a-top-3-probability/07-06-PLAN.md
