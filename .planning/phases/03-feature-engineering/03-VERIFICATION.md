@@ -1,18 +1,62 @@
 ---
 phase: 03-feature-engineering
-verified: 2026-06-12T18:10:00Z
+verified: 2026-06-15T16:00:00Z
 status: passed
 score: 4/4 must-haves verified
 overrides_applied: 0
-re_verification: false
+re_verification: true
+initial_verification: 2026-06-12T18:10:00Z
+re_verification_reason: "Phase 6 unified corpus (534,953 rows, 2015-2026/5); feature_generator np.select dtype bug fixed (quick 260615-jdx); feature layer regenerated + directly re-inspected"
 ---
 
 # Phase 3: Feature Engineering Verification Report
 
 **Phase Goal:** ML-ready feature vectors are generated from standard-layer data, providing the training inputs that Model A requires
-**Verified:** 2026-06-12T18:10:00Z
+**Verified:** 2026-06-15T16:00:00Z (re-verification on unified corpus)
 **Status:** passed
-**Re-verification:** No -- initial verification
+**Re-verification:** Yes — 2026-06-15 (unified corpus, post Phase 6). Initial verification 2026-06-12 (Kaggle-only) preserved below.
+
+## Re-verification (2026-06-15): Unified Corpus
+
+Phase 6 (data-integration, completed 2026-06-15) merged Kaggle (2015-2021) + scraped (2021-08..2026-05) into a unified standard corpus (race 38,009 / entry=result 534,953 rows, 2015-01-04..2026-05-31). The feature layer — originally verified 2026-06-12 against the Kaggle-only corpus (311,806 rows) — required regeneration against the unified corpus. This section records the re-verification (direct inspection of the regenerated Parquet + suite).
+
+### Trigger & fix
+- `feature_generator.generate_target()` line 614 raised `TypeError: invalid entry 0 in condlist` on the unified corpus. Root cause: the unified corpus's `finish_note` is pandas nullable `string` dtype (Phase 4 cycle-3 #1), so `df["finish_note"] == "中"` produced a nullable-boolean Series that `np.select` rejects (requires native bool ndarray). **Not** an empty-condlist / out-of-range issue. The Kaggle-only corpus had `finish_note` as object dtype, so the latent bug did not surface.
+- Fix (quick task 260615-jdx, commits `516fa46` + `bcb0716`): each condlist entry coerced via `.to_numpy(dtype=bool, na_value=False)` (pd.NA → False → default "finished" branch). 6-way classification logic unchanged and non-degenerate (TestTargetVariable 11 tests invariant + new nullable-dtype regression test added).
+
+### 4 must-haves re-verified against the unified corpus
+
+| # | Truth | Re-verified | Evidence (2026-06-15 direct inspection) |
+|---|-------|-------------|------------------------------------------|
+| 1 | All specified features present; popularity/win_odds excluded | ✓ | features_train 78 cols / features_pred 74 cols; train-only 4 cols = target/auxiliary (target_top3, result_status, is_dnf, exclude_from_training); FEATURE_COLUMNS unchanged |
+| 2 | Temporal shift — no future leakage | ✓ | lag-feature NaN signature monotonic: prev_1 13.0% → prev_5 47.4% (correct "no prior start" pattern); rolling stats ~0% NaN; TestTemporalInvariance green |
+| 3 | Categorical CategoricalDtype | ✓ | category dtype columns present in Parquet output |
+| 4 | pred passes audit_leakage (zero post-race) | ✓ | features_pred has no target/auxiliary columns (only FEATURE_COLUMNS + ENTITY_KEY); audit runs in generate() step 12 |
+
+### Direct inspection of regenerated Parquet (features_train/pred.parquet)
+- **Rows:** 534,953 each (full unified corpus — both files cover all rows; train has target cols, pred does not; temporal train/test split is deferred to Phase 7 training time, not feature-gen time, per `generate()` design Step 13/14).
+- **race_id:** 38,009 unique = full unified corpus; race_date 2015-01-04 → 2026-05-31.
+- **target_top3:** 21.3% positive (114,123 / 534,953) — consistent with Kaggle-only baseline (21.12%).
+- **result_status** (np.select fix site): finished=531,320, dnf=1,668, removed=1,090, scratched=854, demoted=20, disqualified=1 — 6 categories healthy; fix confirmed correct.
+- **Schema:** 0 Arrow-null columns; race_date/race_id string; dtype mix float64/string-nullable/Int64/Float64/bool/category.
+- **Minor observation:** 15 non-finished rows have target_top3=1 (0.003%; demoted/降着 horses physically finishing top-3 — target-definition nuance, same as Kaggle-only behavior, covered by TestTargetVariable; not a defect).
+
+### Suite
+- `tests/pipeline/test_feature_generator.py`: 97 passed (was 95 + 2 new incl. nullable-dtype regression).
+- Full suite: 513 passed / 1 skipped / 0 failed.
+
+### References
+- Quick task PLAN/SUMMARY: `.planning/quick/260615-jdx-*/`
+- Phase 6 DEFERRED-1: `.planning/phases/06-data-integration/deferred-items.md`
+- Commits: `516fa46` (fix), `bcb0716` (regen)
+
+**Re-verification verdict:** passed — 4/4 must-haves hold against the unified corpus; feature layer regenerated and directly inspected; Phase 7 unblocked.
+
+---
+
+_Note: the sections below ("## Goal Achievement" onward) are the **initial verification record** (2026-06-12, Kaggle-only 311,806-row corpus), preserved as methodology evidence. Numeric values there (311,806 rows, 21.12% target rate, 95 tests) reflect the Kaggle-only baseline; the unified-corpus current values are in the re-verification section above._
+
+## Goal Achievement
 
 ## Goal Achievement
 

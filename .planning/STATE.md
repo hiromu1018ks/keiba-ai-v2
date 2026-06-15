@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 7
 Plan: Not started
-Status: Phase 06 fully delivered; unified corpus LOCKED (race=38009/entry=result=534953); feature_generator np.select 修正 + feature 層再生成 済み（quick 260615-jdx）; next = phase-level verification then Phase 7
+Status: Phase 06 fully delivered; unified corpus LOCKED (race=38009/entry=result=534953); feature_generator np.select 修正 + feature 層再生成 済み（quick 260615-jdx）＋ feature 層 直接再検証済み（03-VERIFICATION.md re_verified 2026-06-15, unified corpus）; next = Phase 7
 Last activity: 2026-06-15 - Completed quick task 260615-jdx: feature_generator np.select fix + unified-corpus feature regen
 
 Progress: [████░░░░░░] 42%
